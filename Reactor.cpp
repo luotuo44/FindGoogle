@@ -62,7 +62,8 @@ bool Reactor::addFd(socket_t sockfd, int events)
     if( sockfd >= m_event_set.size() )//new fd
     {
         int old_size = m_event_set.size();
-        //should use push_back, because fd may jump more than 1
+        //不应该使用push_back, 因为m_event_set的大小不是fd的个数，而是fd最大值+1
+        //而前后加入的fd值可能会出现跳跃
         m_event_set.resize(sockfd+1);
 
         //all fd that doesn't used are set -1 to identify
@@ -115,14 +116,21 @@ void Reactor::updateEvent(socket_t sockfd, int new_events)
 }
 
 
-int Reactor::dispatch()
+
+//timetout 的默认值是-1, DNS_Machine使用默认值。ConnectPort将设置一个超时时长
+int Reactor::dispatch(int timeout)
 {
-    int ret;
+    int ret = 1;
     int i, what;
 
 begin:
-    ret = poll(&m_event_set[0], m_event_set.size(), -1);
-    assert( ret != 0);
+    ret = poll(&m_event_set[0], m_event_set.size(), timeout);
+
+    if( ret == 0 )//timeout
+    {
+        m_observer->update(-1, 0);
+        return 1;
+    }
 
     if( ret == -1 )
     {

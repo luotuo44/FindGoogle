@@ -127,7 +127,6 @@ std::string toDNSFormat(std::string hostname)
     hostname += ".";//追加一个'.'，方便循环
 
     std::string dst;
-    int i = 0;
 
     std::string::size_type pos = 0, last = 0;
     while( (pos = hostname.find('.', last) ) != std::string::npos)

@@ -5,3 +5,6 @@ dns_server:89.233.43.71;37.235.1.174;91.239.100.100;74.82.42.42
 domain:www.google.com.hk:443;www.google.com
 domain:scholar.google.com.hk:80
 #domain:www.sina.com:80
+domain:www.facebook.com:443
+domain:www.twitter.com:443
+domain:zh.wikipedia.org:443

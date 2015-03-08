@@ -30,4 +30,5 @@ LIBS += -pthread
 QMAKE_CXXFLAGS += -std=c++11
 
 OTHER_FILES += \
-    dns_query.txt
+    dns_query.txt \
+    README.md

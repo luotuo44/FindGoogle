@@ -18,6 +18,8 @@
 #include<assert.h>
 
 
+extern int g_max_fileno;
+
 namespace SocketOps
 {
 
@@ -66,6 +68,14 @@ int tcp_connect_server(const char* server_ip, int port,
     *sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if( *sockfd == -1 )
         return -1;
+
+    if( *sockfd >= g_max_fileno )//too much fd
+    {
+        SocketOps::close_socket(*sockfd);
+        *sockfd = -1;
+        errno = EMFILE;
+        return -1;
+    }
 
 
     int ret, save_errno;
