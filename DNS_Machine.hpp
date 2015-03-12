@@ -28,7 +28,7 @@ public:
 
     void addConn(const std::string &domain, int port, const std::string &dns_server);
 
-    bool driveMachine(struct conn &c);
+    bool driveMachine(struct connDNS &c);
 
     void init();
     void update(socket_t fd, int events);
@@ -39,10 +39,10 @@ public:
 
 
 private:
-    void getDNSQueryPacket(struct conn &c);
+    void getDNSQueryPacket(struct connDNS &c);
 
 private:
-    std::list<struct conn> m_conns;
+    std::list<struct connDNS> m_conns;
     //std::weak_ptr<Observer> m_reactor;
     Reactor m_reactor;
 
