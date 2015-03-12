@@ -24,14 +24,11 @@
 
 #include<iostream>
 
-typedef std::vector< std::string > StringVec;
-typedef std::pair<std::string, StringVec> DomainIP;
-
 
 void DNS_Machine::addConn(const std::string &domain, int port,
                           const std::string &dns_server)
 {
-    struct connDNS c;
+    struct conn c;
     int ret = SocketOps::tcp_connect_server(dns_server.c_str(), 53,
                                             &c.fd);
 
@@ -82,7 +79,7 @@ void DNS_Machine::start()
     if( m_observer.get() )//tell ConnectPort finished dns query
     {
         std::vector< std::string> str_vec;
-        m_observer->newDNSResult("", -1, str_vec);
+        m_observer->newResult("", -1, str_vec);
     }
 }
 
@@ -102,9 +99,9 @@ void DNS_Machine::setObserver(std::shared_ptr<ConnectPort> &observer)
 
 void DNS_Machine::update(socket_t fd, int events)
 {
-    //由文件描述符找到对应的connDNS结构体
+    //由文件描述符找到对应的conn结构体
     auto it = std::find_if(m_conns.begin(), m_conns.end(),
-                           [fd](struct connDNS &c)->bool{
+                           [fd](struct conn &c)->bool{
                                return fd == c.fd;
                             });
 
@@ -119,7 +116,7 @@ void DNS_Machine::update(socket_t fd, int events)
 
 typedef std::vector<std::string> StringVec;
 
-bool DNS_Machine::driveMachine(struct connDNS &c)
+bool DNS_Machine::driveMachine(struct conn &c)
 {
     bool stop = false;
     int ret;
@@ -240,7 +237,7 @@ bool DNS_Machine::driveMachine(struct connDNS &c)
                 //将结果转移给另外一个专门connnect 443端口的线程
                 if(m_observer.get())
                 {
-                    m_observer->newDNSResult(c.domain, c.port, str_vec);
+                    m_observer->newResult(c.domain, c.port, str_vec);
                 }
             }
 
@@ -270,7 +267,7 @@ bool DNS_Machine::driveMachine(struct connDNS &c)
 }
 
 
-void DNS_Machine::getDNSQueryPacket(struct connDNS &c)
+void DNS_Machine::getDNSQueryPacket(struct conn &c)
 {
 
     std::string query_packet = DNS::getDNSPacket(c.domain);

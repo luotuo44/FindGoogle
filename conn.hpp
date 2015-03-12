@@ -17,11 +17,10 @@
 #include"typedefine.hpp"
 
 
-
-struct connDNS
+struct conn
 {
-    connDNS(){}
-    ~connDNS(){}
+    conn(){}
+    ~conn(){}
 
     socket_t fd;
 
@@ -43,17 +42,18 @@ struct connDNS
 };
 
 
-struct connDomain
+typedef std::vector< std::string > StringVec;
+typedef std::pair<std::string, StringVec> DomainIP;
+
+struct connIPPort
 {
     socket_t fd;
+
+    TEST_STATE state;
+
     int port;
-    int try_times;
-    int success_times;
-
-    std::string domain;
-    std::string ip;
-
-    Domain_STATE state;
+    DomainIP ips;
+    int curr_ip;//conn which ip
 };
 
 #endif // CONN_HPP

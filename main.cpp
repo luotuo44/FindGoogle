@@ -15,7 +15,7 @@
 #include<vector>
 #include<map>
 #include<set>
-#include<sys/resource.h>
+#include<fstream>
 
 #include"Reactor.hpp"
 #include"DNS_Machine.hpp"
@@ -24,10 +24,9 @@
 
 using namespace std;
 
-void saveIPResult(const char *domain, const char *ip, int port, int success_times)
+void saveIPResult(const char *domain, const char *ip, int port)
 {
-    fprintf(stdout, "  ### can connect %s---%s:%d, with %d%% success\n",
-                        domain, ip, port, 25*success_times);
+    fprintf(stdout, "  ### can connect %s---%s:%d\n", domain, ip, port);
 }
 
 
@@ -120,6 +119,19 @@ void* threadFun(void *arg)
         }
     }
 
+//    //dns_machine->addConn("www.baidu.com", 443, "223.5.5.5");
+//    //dns_machine->addConn("www.sina.com", 80, "223.5.5.5");
+//    dns_machine->addConn("www.google.com.hk", 443, "208.76.50.50");
+//    //dns_machine->addConn("ns1.google.com", 53, "208.67.222.222");
+//    dns_machine->addConn("www.google.com", 443, "208.76.50.50");
+//    dns_machine->addConn("www.google.com.hk", 443, "216.239.32.10");
+//    dns_machine->addConn("www.google.com", 443, "74.82.42.42");
+//    dns_machine->addConn("www.google.com.hk", 443, "91.239.100.100");
+//    dns_machine->addConn("www.google.com.hk", 443, "37.235.1.174");
+//    dns_machine->addConn("www.google.com", 443, "37.235.1.174");
+//    dns_machine->addConn("www.google.com", 443, "216.146.35.35");
+//    //dns_machine->addConn("www.google.com", 443, "208.67.222.222");
+//    //dns_machine->addConn("www.taobao.com", 80, "223.5.5.5");
     dns_machine->start();
 
     cout<<endl<<"finish dns query"<<endl<<endl;
@@ -128,23 +140,8 @@ void* threadFun(void *arg)
 }
 
 
-int g_max_fileno = 1000;
-
 int main()
 {
-    struct rlimit res;
-
-    int ret = getrlimit(RLIMIT_NOFILE, &res);
-    if( ret == -1 )
-    {
-        perror("getrlimit fail ");
-        return -1;
-    }
-
-    g_max_fileno = res.rlim_cur - 10;
-    fprintf(stdout, "max nofile limit %d\n", g_max_fileno);
-
-
     StringSet dns_server;
     StringMap domain;
     readQueryList(dns_server, domain);
@@ -172,5 +169,8 @@ int main()
 
     test_port->start();
 
+    //read configure and call dns_machine.addConn
+
+    cout << "Hello World!" << endl;
     return 0;
 }

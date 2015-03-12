@@ -29,21 +29,20 @@ public:
 
     void start();
 
-    void newDNSResult(const std::string &domain, int port, std::vector<std::string> &ips);
+    void newResult(const std::string &domain, int port, std::vector<std::string> &ips);
 
-    bool driveMachine(connDomain &c);
+    bool driveMachine(struct connIPPort &c);
 
 private:
     void addNewIPPort();
-    bool tryNewConnect(struct connDomain &c);
-
+    bool tryNewConnect(struct connIPPort &c);
 
 private:
     bool m_dns_query_is_stop;
     Reactor m_reactor;
     IPQueue m_ip_queue;
     int m_fd[2]; //pipe
-    std::list<struct connDomain> m_conns;
+    std::list<struct connIPPort> m_conns;
 
     writer_fun m_writer;
 };

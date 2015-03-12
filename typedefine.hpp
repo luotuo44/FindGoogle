@@ -45,7 +45,7 @@ enum DNS_STATE
 
 
 //test domain port state
-enum Domain_STATE
+enum TEST_STATE
 {
     new_ip,
     new_connect,
@@ -57,7 +57,7 @@ enum Domain_STATE
 };
 
 
-typedef void (*writer_fun)(const char *domain, const char *ip, int port, int success_times);
+typedef void (*writer_fun)(const char *domain, const char *ip, int port);
 
 
 
