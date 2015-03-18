@@ -99,6 +99,7 @@ std::string getDNSPacket(const std::string &hostname)
     head->flag.field.zero = 0;
     head->flag.field.rcode = 0;
 
+    head->flag.val = SocketOps::htons(0x0100);
 
     head->q_count = SocketOps::htons(1);
     head->a_count = 0;
