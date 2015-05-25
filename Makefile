@@ -1,15 +1,17 @@
 LIBS = -pthread
 FLAGS = -Wall -Werror -std=c++11
 
-object = ConnectPort.o DNS_Machine.o SocketOps.o DNS.o IPQueue.o \
-	 Reactor.o 
+
+src = $(wildcard *.cpp)
+objects = $(patsubst %.cpp, %.o, $(src))
 
 
-FindGoogle:main.cpp $(object)
-	g++ $< $(object) $(LIBS) $(FLAGS) -o $@
+
+FindGoogle: $(objects)
+	g++  $(objects) $(LIBS) $(FLAGS) -o $@
 
 
-$(object):%.o : %.cpp 
+$(objects):%.o : %.cpp 
 	g++ -c $(FLAGS)  $<  -o $@
 
 
