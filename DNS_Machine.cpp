@@ -9,7 +9,6 @@
 
 #include"DNS_Machine.hpp"
 
-#include<sys/socket.h> //socket
 #include<stdio.h>
 #include<string.h>
 #include<algorithm>
@@ -79,7 +78,7 @@ void DNS_Machine::start()
         }
     }
 
-    if( m_observer.get() )//tell ConnectPort finished dns query
+    if( m_observer)//tell ConnectPort finished dns query
     {
         std::vector< std::string> str_vec;
         m_observer->newDNSResult("", -1, str_vec);
@@ -111,10 +110,12 @@ void DNS_Machine::update(socket_t fd, int events)
 
     bool del_conn = driveMachine(*it);
 
-    if(del_conn)
+    if(del_conn)//need to delete this connDNS struct
     {
         m_conns.erase(it);
     }
+
+    (void)events;
 }
 
 typedef std::vector<std::string> StringVec;
@@ -238,7 +239,7 @@ bool DNS_Machine::driveMachine(struct connDNS &c)
                 std::cout<<std::endl;
 
                 //将结果转移给另外一个专门connnect 443端口的线程
-                if(m_observer.get())
+                if(m_observer)
                 {
                     m_observer->newDNSResult(c.domain, c.port, str_vec);
                 }
@@ -246,7 +247,6 @@ bool DNS_Machine::driveMachine(struct connDNS &c)
 
             c.state = stop_conn_dns;//这个conn的任务完成了
             break;
-
         }
 
 

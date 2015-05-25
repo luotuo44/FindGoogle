@@ -1,5 +1,5 @@
 LIBS = -pthread
-FLAGS = -std=c++11
+FLAGS = -Wall -Werror -std=c++11
 
 object = ConnectPort.o DNS_Machine.o SocketOps.o DNS.o IPQueue.o \
 	 Reactor.o 

@@ -1,10 +1,17 @@
 dns_server:208.76.50.50;216.146.35.35
 dns_server:89.233.43.71;37.235.1.174;91.239.100.100;74.82.42.42
+dns_server:50.243.110.225;207.78.243.198;202.129.240.226
+dns_server:133.11.23.83;183.77.248.49;218.230.41.156
+dns_server:182.93.18.83;202.175.120.27;202.175.1.197
+dns_server:203.170.254.19;79.161.222.194
+
+
 
 #default port is 443
-domain:www.google.com.hk:443;www.google.com
+#domain:www.google.com.hk:443;www.google.com
+domain:www.google.com.hk
 domain:scholar.google.com.hk:80
 #domain:www.sina.com:80
-domain:www.facebook.com:443
-domain:www.twitter.com:443
+#domain:www.facebook.com:443
+#domain:www.twitter.com:443
 domain:zh.wikipedia.org:443
