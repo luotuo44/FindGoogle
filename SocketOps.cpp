@@ -56,12 +56,8 @@ void close_socket(socket_t fd)
 #endif
 }
 
-typedef struct sockaddr SA;
 
-//-1 system call error. 0 connect success. 1 wait to connect,
-//cannot connect immediately, and need to try again
-int tcp_connect_server(const char* server_ip, int port,
-                       socket_t *sockfd)
+int new_socket(socket_t *sockfd)
 {
     assert(sockfd != NULL);
 
@@ -77,32 +73,40 @@ int tcp_connect_server(const char* server_ip, int port,
         return -1;
     }
 
+    return 0;
+}
 
-    int ret, save_errno;
+
+typedef struct sockaddr SA;
+
+
+//-1 system call error. 0 connect success. 1 wait to connect,
+//cannot connect immediately, and need to try again
+int do_connect_server(const char *server_ip,
+                      int port, socket_t sockfd)
+{
+    int ret;
     struct sockaddr_in server_addr;
 
     memset(&server_addr, 0, sizeof(server_addr) );
 
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(port);
-    ret = inet_aton(server_ip, &server_addr.sin_addr);
+    ret = ::inet_aton(server_ip, &server_addr.sin_addr);
     if( ret == 0 ) //the server_ip is not valid value
     {
         errno = EINVAL;
-        goto err;
+        return -1;
     }
 
 
-    if( make_socket_nonblocking(*sockfd) == -1 )
-        goto err;
-
-    ret = connect(*sockfd, (SA*)&server_addr, sizeof(server_addr));
+    ret = ::connect(sockfd, (SA*)&server_addr, sizeof(server_addr));
 
     if( ret == 0 )//connect success immediately
         return 0;
     else if( ret == -1)
     {
-        int e = SocketOps::get_socket_error(*sockfd);
+        int e = SocketOps::get_socket_error(sockfd);
 
         if( SocketOps::wait_to_connect(e) )
             return 1;
@@ -110,18 +114,46 @@ int tcp_connect_server(const char* server_ip, int port,
             fprintf(stderr, "refuse connect\n");
         else
             fprintf(stderr, "unknown err\n");
-
-        goto err;
     }
 
-err:
-    save_errno = errno;
+    return -1;
+}
+
+
+
+//-1 system call error. 0 connect success. 1 wait to connect,
+//cannot connect immediately, and need to try again
+int tcp_connect_server(const char* server_ip, int port,
+                       socket_t *sockfd)
+{
+    assert(sockfd != NULL);
+
+    do
+    {
+        if( SocketOps::new_socket(sockfd) == -1)
+            return -1;
+
+        if( SocketOps::make_socket_nonblocking(*sockfd) == -1 )
+            break;
+
+
+        int ret = SocketOps::do_connect_server(server_ip, port, *sockfd);
+
+        if( ret != -1 )
+            return ret;
+
+    }while(0);
+
+
+    int save_errno = errno;
     SocketOps::close_socket(*sockfd);
     *sockfd = -1;
     errno = save_errno;
 
     return -1;
 }
+
+
 
 //-1 system call error. 0 connect success. 1 wait to connect,
 int connecting_server(socket_t fd)
@@ -182,6 +214,7 @@ int get_socket_error(socket_t fd)
     return err;
 
 #else
+    (void)fd;
     return errno;
 #endif
 }

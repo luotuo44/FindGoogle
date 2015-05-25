@@ -14,8 +14,9 @@ namespace Utility
 
 class Uncopyable
 {
-public:
+protected:
     Uncopyable() {}
+    ~Uncopyable(){}
 
 private:
     Uncopyable(const Uncopyable& un);

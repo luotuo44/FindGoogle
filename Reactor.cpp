@@ -23,7 +23,7 @@ Reactor::Reactor()
     : m_observer(NULL),
       m_fd_num(0)
 {
-
+    m_event_set.reserve(32);
 }
 
 
@@ -48,28 +48,8 @@ bool Reactor::addFd(socket_t sockfd, int events)
 {
     assert(sockfd >= 0);
 
-    if( sockfd >= m_event_set.capacity() )
-    {
-        int temp_size;
-        if(m_event_set.size() < 32)
-            temp_size = 32;
-        else
-            temp_size = 2*sockfd;
-
-        m_event_set.reserve(temp_size);
-    }
-
-    if( sockfd >= m_event_set.size() )//new fd
-    {
-        int old_size = m_event_set.size();
-        //不应该使用push_back, 因为m_event_set的大小不是fd的个数，而是fd最大值+1
-        //而前后加入的fd值可能会出现跳跃
-        m_event_set.resize(sockfd+1);
-
-        //all fd that doesn't used are set -1 to identify
-        while( old_size < m_event_set.size() )
-            m_event_set[old_size++].fd = -1;
-    }
+    if( (size_t)sockfd >= m_event_set.size() )
+        expand(sockfd);
 
     m_event_set[sockfd].fd = sockfd;
     m_event_set[sockfd].revents = 0;
@@ -85,12 +65,27 @@ bool Reactor::addFd(socket_t sockfd, int events)
 }
 
 
+void Reactor::expand(int sockfd)
+{
+    if( (size_t)sockfd >= m_event_set.size() )//new fd
+    {
+        auto old_size = m_event_set.size();
+        //不应该使用push_back, 因为m_event_set的大小不是fd的个数，而是fd最大值+1
+        //而前后加入的fd值可能会出现跳跃
+        m_event_set.resize(sockfd+1);
+
+        //all fd that doesn't used are set -1 to identify
+        while( old_size < m_event_set.size() )
+            m_event_set[old_size++].fd = -1;
+    }
+}
+
 
 
 
 void Reactor::delFd(socket_t sockfd)
 {
-    assert(sockfd >= 0 && sockfd < m_event_set.size() );
+    assert(sockfd >= 0 && (size_t)sockfd < m_event_set.size() );
 
     if( m_event_set[sockfd].fd != -1)
         --m_fd_num;
@@ -121,10 +116,10 @@ void Reactor::updateEvent(socket_t sockfd, int new_events)
 int Reactor::dispatch(int timeout)
 {
     int ret = 1;
-    int i, what;
+    int what;
 
 begin:
-    ret = poll(&m_event_set[0], m_event_set.size(), timeout);
+    ret = ::poll(&m_event_set[0], m_event_set.size(), timeout);
 
     if( ret == 0 )//timeout
     {
@@ -143,6 +138,7 @@ begin:
     //Observer modern
     if( m_observer != NULL)
     {
+        std::vector<struct pollfd>::size_type i;
         for(i = 0; i < m_event_set.size(); ++i)
         {
             what = m_event_set[i].revents;

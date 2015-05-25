@@ -241,6 +241,8 @@ std::string parseOneRecord(const unsigned char *buff,
 std::vector<std::string>
         parseDNSResultPacket(const unsigned char *buff, int len)
 {
+    (void)len;
+
     std::vector<std::string> str_vec;
     DNS_HEADER_t *head = (DNS_HEADER_t*)buff;
 

@@ -97,6 +97,8 @@ void ConnectPort::update(socket_t fd, int events)
         else
             start = ++it;
     }
+
+    (void)events;
 }
 
 

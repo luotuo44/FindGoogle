@@ -38,6 +38,9 @@ public:
     int dispatch(int timeout = -1);
 
 private:
+    void expand(socket_t sockfd);
+
+private:
     //vector的大小不是fd的个数，而是fd最大值+1(类似select的第一个参数)
     std::vector<struct pollfd> m_event_set;
     Observer *m_observer;

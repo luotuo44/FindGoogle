@@ -15,6 +15,7 @@
 #include<vector>
 #include<map>
 #include<set>
+#include<assert.h>
 #include<sys/resource.h>
 
 #include"Reactor.hpp"
@@ -62,12 +63,12 @@ void parseDomain(const std::string &line, StringMap &domain)
 
         if( pos2 < pos ) //this domain specify port
         {
-            port = atoi(std::string(line, pos2+1, pos-(pos2+1)).c_str());
+            port = atoi(line.substr(pos2+1, pos-(pos2+1)).c_str());
         }
         else
             pos2 = pos;
 
-        domain[std::string(line, last, pos2-last)] = port;
+        domain[line.substr(last, pos2-last)] = port;
 
     }while( pos != string::npos );
 
@@ -106,11 +107,24 @@ void readQueryList(StringSet &dns_server, StringMap &domain)
 
 void* threadFun(void *arg)
 {
+    assert(arg != NULL);
+
     DNS_Machine *dns_machine = (DNS_Machine*)(arg);
 
     StringSet dns_server;
     StringMap domain;
     readQueryList(dns_server, domain);
+
+    cout<<"dns_server : ";
+    for(auto e : dns_server)
+        cout<<e<<'\t';
+    cout<<endl;
+
+    cout<<"domain : ";
+    for(auto e : domain)
+        cout<<e.first<<":"<<e.second<<endl;
+    cout<<endl;
+
 
     for(auto e : dns_server)
     {
@@ -130,7 +144,7 @@ void* threadFun(void *arg)
 
 int g_max_fileno = 1000;
 
-int main()
+void limitFileno()
 {
     struct rlimit res;
 
@@ -138,27 +152,17 @@ int main()
     if( ret == -1 )
     {
         perror("getrlimit fail ");
-        return -1;
+        return ;
     }
 
     g_max_fileno = res.rlim_cur - 10;
     fprintf(stdout, "max nofile limit %d\n", g_max_fileno);
 
+}
 
-    StringSet dns_server;
-    StringMap domain;
-    readQueryList(dns_server, domain);
-
-    cout<<"dns_server : ";
-    for(auto e : dns_server)
-        cout<<e<<'\t';
-    cout<<endl;
-
-    cout<<"domain : ";
-    for(auto e : domain)
-        cout<<e.first<<":"<<e.second<<endl;
-    cout<<endl;
-
+int main()
+{
+    limitFileno();
 
     DNS_Machine dns_machine;
     dns_machine.init();
