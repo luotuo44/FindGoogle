@@ -7,7 +7,7 @@
 //Use of this source code is governed by a BSD-style license
 
 
-#include <iostream>
+#include<iostream>
 #include<stdio.h>
 #include<pthread.h>
 #include<memory>
@@ -19,16 +19,15 @@
 #include<sys/resource.h>
 
 #include"Reactor.hpp"
-#include"DNS_Machine.hpp"
-#include"ConnectPort.hpp"
-
+#include"DnsSeacher.hpp"
+#include"DomainExplorer.hpp"
+#include"Thread.hpp"
 
 using namespace std;
 
 void saveIPResult(const char *domain, const char *ip, int port, int success_times)
 {
-    fprintf(stdout, "  ### can connect %s---%s:%d, with %d%% success\n",
-                        domain, ip, port, 25*success_times);
+    fprintf(stdout, "  ### can connect %s---%s:%d, with %d%% success\n", domain, ip, port, 25*success_times);
 }
 
 
@@ -43,9 +42,8 @@ void parseDNSServer(const std::string &line, StringSet &dns_server)
     {
         auto last = pos + 1;
         pos = line.find(';', last);
-        dns_server.insert(std::string(line, last, pos-last));
+        dns_server.insert(line.substr(last, pos-last));
     }while(pos != string::npos);
-
 }
 
 
@@ -105,11 +103,10 @@ void readQueryList(StringSet &dns_server, StringMap &domain)
 
 
 
-void* threadFun(void *arg)
+void threadFun(void *arg)
 {
-    assert(arg != NULL);
-
-    DNS_Machine *dns_machine = (DNS_Machine*)(arg);
+    DnsSeacher *dns_seacher = reinterpret_cast<DnsSeacher*>(arg);
+    assert( dns_seacher != nullptr);
 
     StringSet dns_server;
     StringMap domain;
@@ -130,51 +127,27 @@ void* threadFun(void *arg)
     {
         for(auto ee : domain)
         {
-            dns_machine->addConn(ee.first, ee.second, e);
+            dns_seacher->addQuery(ee.first, ee.second, e);
         }
     }
 
-    dns_machine->start();
-
-    cout<<endl<<"finish dns query"<<endl<<endl;
-
-    return NULL;
+    dns_seacher->run();
 }
 
-
-int g_max_fileno = 1000;
-
-void limitFileno()
-{
-    struct rlimit res;
-
-    int ret = getrlimit(RLIMIT_NOFILE, &res);
-    if( ret == -1 )
-    {
-        perror("getrlimit fail ");
-        return ;
-    }
-
-    g_max_fileno = res.rlim_cur - 10;
-    fprintf(stdout, "max nofile limit %d\n", g_max_fileno);
-
-}
 
 int main()
 {
-    limitFileno();
+    DnsSeacher dns_seacher;
+    DomainExplorerPtr domain_explorer = std::make_shared<DomainExplorer>();
 
-    DNS_Machine dns_machine;
-    dns_machine.init();
+    dns_seacher.setObserver(domain_explorer);
 
-    std::shared_ptr<ConnectPort> test_port(new ConnectPort(saveIPResult));
-    test_port->init();
-    dns_machine.setObserver(test_port);
+    domain_explorer->setResultCB(saveIPResult);
 
-    pthread_t thread;
-    pthread_create(&thread, NULL, threadFun, &dns_machine);
+    Thread thread(threadFun);
+    thread.start(&dns_seacher);
 
-    test_port->start();
+    domain_explorer->run();
 
     return 0;
 }

@@ -1,3 +1,0 @@
-Changes in version 0.2
-修复DNS报文标志字段的值设置，增强其可移殖性
-增加每一个Domain:IP的测试次数，增加至4次。由此改变了DNS_Machine.cpp的具体实现

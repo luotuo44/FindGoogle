@@ -14,6 +14,8 @@
 #include<stdio.h>
 
 
+using namespace Net;
+
 namespace DNS
 {
 

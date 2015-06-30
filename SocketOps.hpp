@@ -1,5 +1,5 @@
 //Filename: SocketOps.hpp
-//Date: 2015-2-20
+//Date: 2015-6-13
 
 //Author: luotuo44   http://blog.csdn.net/luotuo44
 
@@ -9,11 +9,12 @@
 #ifndef SOCKETOPS_HPP
 #define SOCKETOPS_HPP
 
-
-#include"typedefine.hpp"
-
-#include<string>
 #include<stdint-gcc.h>
+#include<string>
+
+
+namespace Net
+{
 
 namespace SocketOps
 {
@@ -24,28 +25,34 @@ uint16_t ntohs(uint16_t net);
 uint32_t htonl(uint32_t host);
 uint32_t ntohl(uint32_t net);
 
-int tcp_connect_server(const char* server_ip, int port,
-                       socket_t *sockfd);
+int new_tcp_socket();
+void close_socket(int fd);
+int make_nonblocking(int fd);
 
-int connecting_server(socket_t fd);
+//-1 system call error. 0 connect success. 1 wait to connect,
+//cannot connect immediately, and need to try again
+int tcp_connect_server(const char *server_ip, int port, int sockfd);
 
-int make_socket_nonblocking(socket_t fd);
 
-int get_socket_error(socket_t fd);
+int new_tcp_socket_connect_server(const char* server_ip, int port, int *sockfd);
+
+int connecting_server(int fd);
 
 bool wait_to_connect(int err);
 bool refuse_connect(int err);
 
-void close_socket(socket_t fd);
-
-int write(socket_t fd, unsigned char *buff, int len);
-int read(socket_t fd, unsigned char *buff, int len);
-
-int writen(socket_t fd, const void *vptr, int n);
-int readn(socket_t fd, void *vptr, int n);
-
 std::string parseIP(const unsigned char *buff);
 
+int write(int fd, char *buf, int len);
+int read(int fd, char *buf, int len);
+
+int writen(int fd, const char *buf, int n);
+int readn(int fd, char *buf, int n);
+
+
 }
+
+}
+
 
 #endif // SOCKETOPS_HPP

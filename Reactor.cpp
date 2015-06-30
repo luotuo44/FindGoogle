@@ -1,169 +1,733 @@
 //Filename: Reactor.cpp
-//Date: 2015-2-20
+//Date: 2015/6/6
 
 //Author: luotuo44   http://blog.csdn.net/luotuo44
 
 //Copyright 2015, luotuo44. All rights reserved.
 //Use of this source code is governed by a BSD-style license
 
-
 #include"Reactor.hpp"
-#include"conn.hpp"
 
-#include<poll.h> //poll
-#include<stdlib.h> //realloc
+#include<unistd.h>
+
 #include<assert.h>
-#include<errno.h>
+#include<string.h>
+
+#include<vector>
+#include<map>
+#include<list>
+#include<algorithm>
+#include<chrono>
+
+#include"Logger.hpp"
+#include"Epoller.hpp"
+#include"SocketOps.hpp"
+#include"CurrentThread.hpp"
+#include"MutexLock.hpp"
 
 
-#include"DNS_Machine.hpp"
-#include"typedefine.hpp"
+
+namespace Net
+{
+
+static void printError(const char *op)
+{
+    char buf[50];
+    snprintf(buf, sizeof(buf), "%m");
+    LOG(Log::ERROR)<<op<<" fail: "<<errno;
+}
+
+//this class is used to count the how many read and write events register in a fd
+class Reactor::Helper
+{
+public:
+    Helper()
+    {
+        m_count.reserve(32);
+    }
+
+    ~Helper()=default;
+
+    Helper(const Helper &)=delete;
+    Helper& operator = (const Helper &)=delete;
+    Helper(Helper &&)=default;
+    Helper& operator = (Helper &&)=default;
+
+    int addEvent(int fd, int events)
+    {
+        int ret = 0;
+
+        if( (events & EV_READ)  && addReadEvent(fd) )
+            ret |= EV_READ;//first register read event for fd
+
+        if( (events & EV_WRITE) && addWriteEvent(fd) )
+            ret |= EV_WRITE;//first regitster write event for fd
+
+        return ret;
+    }
+
+
+    int delEvent(int fd, int events)
+    {
+        int ret = 0;
+
+        if( (events & EV_READ)  && delReadEvent(fd) )
+            ret |= EV_READ;//first event deregister read event for fd
+
+        if( (events & EV_WRITE) && delWriteEvent(fd) )
+            ret |= EV_WRITE;//first event deregitster write event for fd
+
+        return ret;
+    }
+
+private:
+    bool isValid(int fd)
+    {
+        return (fd>=0) && (static_cast<size_t>(fd)<m_count.size());
+    }
+
+    //if it is the first read/write event register for a fd,
+    //return true, or return false;
+    bool addReadEvent(int fd);
+    bool addWriteEvent(int fd);
+
+    //if it is the last read/write event deregister for a fd,
+    //return true, or return false;
+    bool delReadEvent(int fd)
+    {
+        if( !isValid(fd) && (m_count[fd].r_num<=0) )
+            return false;
+
+        return --m_count[fd].r_num == 0;
+    }
+
+    bool delWriteEvent(int fd)
+    {
+        if( !isValid(fd) && (m_count[fd].w_num<=0) )
+            return false;
+
+        return --m_count[fd].w_num == 0;
+    }
+
+private:
+    typedef struct helper_tag
+    {
+        int r_num;
+        int w_num;
+
+        helper_tag()
+            : r_num(0), w_num(0)
+        {}
+    }helper_t;
+
+private:
+    std::vector<helper_t> m_count;
+};
+
+
+bool Reactor::Helper::addReadEvent(int fd)
+{
+    if(fd < 0)
+        return false;
+
+    if( static_cast<size_t>(fd) >= m_count.size() )
+        m_count.resize(fd+1);
+
+    return ++m_count[fd].r_num == 1;
+}
+
+
+bool Reactor::Helper::addWriteEvent(int fd)
+{
+    if(fd < 0)
+        return false;
+
+    if( static_cast<size_t>(fd) >= m_count.size() )
+        m_count.resize(fd+1);
+
+    return ++m_count[fd].w_num == 1;
+}
+
+
+//-------------------------------------------------------------------
+
+enum class EV_STATE
+{
+    S_FREE,
+    S_LINK
+};
+
+class Event
+{
+public:
+    Event(int fd, int events, EVENT_CB cb, void *arg)
+        : m_fd(fd), m_events(events), m_re_events(0),
+          m_cb(cb), m_arg(arg),
+          m_state(EV_STATE::S_FREE)
+    {}
+
+public:
+    int m_fd;
+    int m_events;
+    int m_re_events;
+    EVENT_CB m_cb;
+    void *m_arg;
+    int m_internal;//Millisecond
+    EV_STATE m_state;
+    bool m_is_internal;//is the internal for reactor
+
+    std::chrono::milliseconds m_duration;
+    std::chrono::steady_clock::time_point m_active_time;
+    ReactorWPtr reactor;
+};
+
+
+inline bool timerEventCmp(const EventPtr &lhs, const EventPtr &rhs)
+{
+    return lhs->m_active_time > rhs->m_active_time;
+}
+
+
+
+//--------------------------------
+
+class Reactor::Impl
+{
+public:
+    Impl() : m_event_num(0)
+    {}
+
+    ~Impl()=default;
+
+    Impl(const Impl &)=delete;
+    Impl& operator = (const Impl &)=delete;
+
+    Impl(Impl &&)=default;
+    Impl& operator = (Impl &&)=default;
+
+    int eventNum()const { return m_event_num; }
+    void update(int fd, int events);
+
+    bool addEvent(EventPtr &ev);
+    bool delEvent(EventPtr &ev);
+
+    void handleActiveEvent();
+    int minTimerDuration()const;//milliseconds
+
+private:
+    void addTimerEvent(EventPtr &ev);
+    void delTimerEvent(EventPtr &ev);
+
+private:
+    std::multimap<int, EventPtr> m_events;
+    std::multimap<int, EventPtr> m_active_events;
+
+    std::vector<EventPtr> m_timer_events;
+    int m_event_num;
+
+private:
+    auto findEvent(EventPtr &ev) -> decltype(m_events.end());
+};
+
+
+void Reactor::Impl::update(int fd, int events)
+{
+    if( events & EV_TIMEOUT )
+    {
+        assert(!m_timer_events.empty());
+
+        m_timer_events[0]->m_re_events = m_timer_events[0]->m_events & EV_TIMEOUT;
+        m_active_events.insert({m_timer_events[0]->m_fd, m_timer_events[0]});
+        //LOG(Log::INFO)<<"timeout "<<m_timer_events[0]->m_fd;
+        return ;
+    }
+
+    auto range = m_events.equal_range(fd);
+    auto iter = range.first;
+    while( iter != range.second )
+    {
+        if(iter->second->m_events & events)
+        {
+            iter->second->m_re_events = iter->second->m_events & events;
+            m_active_events.insert(*iter);
+        }
+
+        ++iter;
+    }
+}
+
+
+void Reactor::Impl::handleActiveEvent()
+{
+    auto it = m_active_events.begin();
+
+    while(it != m_active_events.end())
+    {
+        //this EventPtr has beed deleted by former active event
+        if( !(it->second->m_re_events & EV_TIMEOUT) && findEvent(it->second) == m_events.end())
+        {
+            m_active_events.erase(it++);
+            continue;
+        }
+
+        if( !(it->second->m_events & EV_PERSIST) )
+            Reactor::delEvent(it->second);
+        else if( it->second->m_re_events & EV_TIMEOUT)//timer event active, and it was persist
+        {
+            delTimerEvent(it->second);
+            addTimerEvent(it->second);
+        }
+
+        if( it->second->m_cb == nullptr)
+        {
+            LOG(Log::ERROR)<<"cb == nullptr";
+        }
+
+        if( it->second->m_re_events & EV_TIMEOUT)
+            ;//LOG(Log::INFO)<<"has timeout event "<<it->second->m_fd;
+
+        it->second->m_cb(it->second->m_fd, it->second->m_re_events, it->second->m_arg);
+        m_active_events.erase(it++);
+    }
+}
+
+
+
+bool Reactor::Impl::addEvent(EventPtr &ev)
+{
+    bool ret = true;
+    do
+    {
+        if( (ev->m_events & EV_TIMEOUT ) && (ev->m_duration.count()>0) )
+            addTimerEvent(ev);
+        if( !(ev->m_events & (~(EV_TIMEOUT|EV_PERSIST))))//just timer event
+            break;
+
+        assert(ev->m_fd >= 0);
+
+        if( findEvent(ev) == m_events.end() )
+            m_events.insert({ev->m_fd, ev});
+        else
+        {
+            LOG(Log::WARN)<<"add a event that has been added before";
+            ret = false;
+        }
+    }while(0);
+
+    m_event_num += ret ? 1 : 0;
+    return ret;
+}
+
+void Reactor::Impl::addTimerEvent(EventPtr &ev)
+{
+    auto it = std::find(m_timer_events.begin(), m_timer_events.end(), ev);
+    if( it != m_timer_events.end())
+    {
+        LOG(Log::WARN)<<"add a timer event that has beed added";
+        return ;
+    }
+
+    ev->m_active_time = std::chrono::steady_clock::now() + std::chrono::duration_cast<std::chrono::steady_clock::duration>(ev->m_duration);
+    m_timer_events.push_back(ev);
+    std::push_heap(m_timer_events.begin(), m_timer_events.end(), timerEventCmp);
+}
+
+
+int Reactor::Impl::minTimerDuration()const//milliseconds
+{
+    if( m_timer_events.empty() )
+        return -1;
+
+    EventPtr ev = m_timer_events.front();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(ev->m_active_time - std::chrono::steady_clock::now()).count();
+}
+
+
+bool Reactor::Impl::delEvent(EventPtr &ev)
+{
+    bool ret = true;
+    do
+    {
+        if( ev->m_events & EV_TIMEOUT )
+            delTimerEvent(ev);
+        if( !(ev->m_events & (~(EV_TIMEOUT|EV_PERSIST))))//just timer event
+            break;
+
+        auto it = findEvent(ev);
+        if( it != m_events.end() )
+            m_events.erase(it);
+        else
+        {
+            LOG(Log::WARN)<<"del a event that didn't exist";
+            ret = false;
+        }
+    }while(0);
+
+    m_event_num -= ret ? 1 : 0;
+    return ret;
+}
+
+
+void Reactor::Impl::delTimerEvent(EventPtr &ev)
+{
+    auto it = std::find(m_timer_events.begin(), m_timer_events.end(), ev);
+    if( it == m_timer_events.end() )
+    {
+        LOG(Log::ERROR)<<"del a timer event that didn't exist";
+        return ;
+    }
+
+    if( it == m_timer_events.begin() )
+    {
+        std::pop_heap(m_timer_events.begin(), m_timer_events.end(), timerEventCmp);
+        m_timer_events.pop_back();
+    }
+    else
+    {
+        m_timer_events.erase(it);
+        std::make_heap(m_timer_events.begin(), m_timer_events.end(), timerEventCmp);
+    }
+}
+
+
+auto Reactor::Impl::findEvent(EventPtr &ev)-> decltype(m_events.end())
+{
+    auto ret = m_events.end();
+
+    do
+    {
+        auto range = m_events.equal_range(ev->m_fd);
+        if( range.first == range.second )
+            break;
+
+        auto it = std::find_if(range.first, range.second, [&ev](decltype(*range.first) p)->bool{
+                            return ev == p.second; //find it
+                        });
+        if( it != range.second)//find it
+            ret = it;
+    }while(0);
+
+    return ret;
+}
+
+
+
+
+//#################################################
+
+class NotifyEventList
+{
+public:
+    std::list<EventPtr> ev_list;
+    Mutex mutex;
+};
+
+class Reactor::AsyncEvent
+{
+public:
+    AsyncEvent()=default;
+    ~AsyncEvent()=default;
+    AsyncEvent(const AsyncEvent&)=delete;
+    AsyncEvent& operator = (const AsyncEvent&)=delete;
+    AsyncEvent(AsyncEvent &&)=default;
+    AsyncEvent& operator = (AsyncEvent &&)=default;
+
+
+    void addOtherThreadEvent(EventPtr &ev);
+    void delOtherThreadEvent(EventPtr &ev);
+
+    void createNotifyEvent(ReactorPtr &reactor);
+    void handleNotifyEvent(int fd, int events, void *arg);
+
+    bool hasSomeEvent()const { return m_add_list.ev_list.size() + m_del_list.ev_list.size(); }
+private:
+    EventPtr m_notify_ev;
+    int m_notify_pipe[2];
+
+    NotifyEventList m_add_list;
+    NotifyEventList m_del_list;
+};
+
+
+void Reactor::AsyncEvent::createNotifyEvent(ReactorPtr &reactor)
+{
+    assert(reactor);
+
+    if( ::pipe(m_notify_pipe) == -1)
+    {
+        printError("fail to create notify pipe ");
+        ::exit(-1);
+    }
+
+    if( SocketOps::make_nonblocking(m_notify_pipe[0]) == -1)
+    {
+        LOG(Log::ERROR)<<"fail to make m_notify pipe non blocking";
+        ::exit(-1);
+    }
+
+    m_notify_ev = reactor->createEvent(m_notify_pipe[0], EV_READ | EV_PERSIST,
+                                       std::bind(&Reactor::AsyncEvent::handleNotifyEvent, this, m_notify_pipe[0], EV_READ, nullptr), nullptr);
+
+
+    m_notify_ev->m_is_internal = true;
+
+    if( !m_notify_ev )
+    {
+        LOG(Log::ERROR)<<"fail to create notify event";
+        ::exit(-1);
+    }
+
+    if( !Reactor::addEvent(m_notify_ev) )
+    {
+        LOG(Log::ERROR)<<"fail to add notify event";
+        ::exit(-1);
+    }
+}
+
+
+void Reactor::AsyncEvent::addOtherThreadEvent(EventPtr &ev)
+{
+    MutexLock lock(m_add_list.mutex);
+    m_add_list.ev_list.push_back(ev);
+
+    SocketOps::writen(m_notify_pipe[1], "a", 1);
+}
+
+
+void Reactor::AsyncEvent::delOtherThreadEvent(EventPtr &ev)
+{
+    MutexLock lock(m_del_list.mutex);
+    m_del_list.ev_list.push_back(ev);
+
+    SocketOps::writen(m_notify_pipe[1], "d", 1);
+}
+
+
+void Reactor::AsyncEvent::handleNotifyEvent(int fd, int events, void *arg)
+{
+    char buf[1];
+    while( 1 )
+    {
+        int ret = SocketOps::read(m_notify_pipe[0], buf, 1);
+        if(ret == 0)//don't have any data to read
+            break;
+        //FIXME: should check ret == -1?
+
+        switch(buf[0])
+        {
+        case 'a' :
+        {
+            MutexLock lock(m_add_list.mutex);
+            EventPtr ev = m_add_list.ev_list.front();
+            m_add_list.ev_list.pop_front();
+            Reactor::addEvent(ev);
+            break;
+        }
+
+        case 'd' :
+        {
+            MutexLock lock(m_del_list.mutex);
+            EventPtr ev = m_del_list.ev_list.front();
+            m_del_list.ev_list.pop_front();
+            Reactor::delEvent(ev);
+            break;
+        }
+
+        }//switch
+    }
+
+    (void)fd;(void)events;(void)arg;
+}
+
+//-----------------------------------------------
 
 Reactor::Reactor()
-    : m_observer(NULL),
-      m_fd_num(0)
+    : m_poller(new Epoller),
+      m_helper(new Helper),
+      m_impl(new Impl),
+      m_async_events(new AsyncEvent),
+      m_is_running(false)
 {
-    m_event_set.reserve(32);
 }
 
 
 Reactor::~Reactor()
 {
-    m_observer = NULL;
 }
 
-void Reactor::setObserver(Observer *observer)
+int Reactor::dispatch()
 {
-    m_observer = observer;
-}
+    m_running_tid = CurrentThread::tid();
+    m_is_running.store(true);
 
-
-int Reactor::fdNum()const
-{
-    return m_event_set.size();
-}
-
-
-bool Reactor::addFd(socket_t sockfd, int events)
-{
-    assert(sockfd >= 0);
-
-    if( (size_t)sockfd >= m_event_set.size() )
-        expand(sockfd);
-
-    m_event_set[sockfd].fd = sockfd;
-    m_event_set[sockfd].revents = 0;
-    m_event_set[sockfd].events = 0;
-
-    if( events & EV_WRITE )
-        m_event_set[sockfd].events |= POLLOUT;
-    if( events & EV_READ )
-        m_event_set[sockfd].events |= POLLIN;
-
-    ++m_fd_num;
-    return true;
-}
-
-
-void Reactor::expand(int sockfd)
-{
-    if( (size_t)sockfd >= m_event_set.size() )//new fd
+    int ret = 0;
+    while(1)
     {
-        auto old_size = m_event_set.size();
-        //不应该使用push_back, 因为m_event_set的大小不是fd的个数，而是fd最大值+1
-        //而前后加入的fd值可能会出现跳跃
-        m_event_set.resize(sockfd+1);
-
-        //all fd that doesn't used are set -1 to identify
-        while( old_size < m_event_set.size() )
-            m_event_set[old_size++].fd = -1;
-    }
-}
-
-
-
-
-void Reactor::delFd(socket_t sockfd)
-{
-    assert(sockfd >= 0 && (size_t)sockfd < m_event_set.size() );
-
-    if( m_event_set[sockfd].fd != -1)
-        --m_fd_num;
-
-    m_event_set[sockfd].fd = -1;
-}
-
-
-
-void Reactor::updateEvent(socket_t sockfd, int new_events)
-{
-    //this sockfd number isn't used
-    if( m_event_set[sockfd].fd == -1 )
-        return ;
-
-    m_event_set[sockfd].events = 0;
-
-    if( new_events & EV_WRITE )
-        m_event_set[sockfd].events |= POLLOUT;
-    if( new_events & EV_READ )
-        m_event_set[sockfd].events |= POLLIN;
-
-}
-
-
-
-//timetout 的默认值是-1, DNS_Machine使用默认值。ConnectPort将设置一个超时时长
-int Reactor::dispatch(int timeout)
-{
-    int ret = 1;
-    int what;
-
-begin:
-    ret = ::poll(&m_event_set[0], m_event_set.size(), timeout);
-
-    if( ret == 0 )//timeout
-    {
-        m_observer->update(-1, 0);
-        return 1;
-    }
-
-    if( ret == -1 )
-    {
-        if( errno == EINTR)
-            goto begin;
-        else
-            return -1;
-    }
-
-    //Observer modern
-    if( m_observer != NULL)
-    {
-        std::vector<struct pollfd>::size_type i;
-        for(i = 0; i < m_event_set.size(); ++i)
+        int event_num = m_impl->eventNum();
+        if( event_num < 2  && !m_async_events->hasSomeEvent())//implicit a notify event
         {
-            what = m_event_set[i].revents;
-
-            if( !what || (m_event_set[i].fd<0) )
-                continue;
-
-            if (what & (POLLHUP|POLLERR))
-                what |= POLLIN|POLLOUT;
-
-            int events = 0;
-            if (what & POLLIN)
-                events |= EV_READ;
-            if (what & POLLOUT)
-                events |= EV_WRITE;
-            if( events == 0 )
-                continue;
-
-            m_observer->update(m_event_set[i].fd, events);
+            ret = 0;
+            break;
         }
+
+        int time_duration = m_impl->minTimerDuration();
+        //LOG(Log::DEBUG)<<"time_duration = "<<time_duration;
+        ret = m_poller->dispatch(time_duration);
+        if( ret <= 0)
+            break;
+
+        m_impl->handleActiveEvent();
     }
 
-    if( m_fd_num == 0)
-        ret = 0;
+	return ret;
+}
 
+
+void Reactor::update(int fd, int events)
+{
+    m_impl->update(fd, events);
+}
+
+
+EventPtr Reactor::createEvent(int fd, int events, EVENT_CB cb, void *arg)
+{
+    //fd < 0, but not just timer event
+    if( fd < 0  && (events & (~(EV_TIMEOUT|EV_PERSIST))) )
+        return EventPtr();
+
+    EventPtr ev(new Event(fd, events, cb, arg) );
+    ev->reactor = m_itself;
+
+    return ev;
+}
+
+
+
+////////////static member function///////
+
+///
+/// \brief Reactor::newReactor
+/// \return a new Reactor instance
+///
+ReactorPtr Reactor::newReactor()
+{
+    //ReactorPtr reactor = std::make_shared<Reactor>();
+    ReactorPtr reactor(new Reactor);
+
+    reactor->m_itself = reactor;
+    reactor->m_async_events->createNotifyEvent(reactor);
+    reactor->m_poller->setObserver(reactor);
+
+    return reactor;
+}
+
+bool Reactor::addEvent(EventPtr &ev, int millisecond)
+{
+    bool ret = true;
+    do
+    {
+        if( !ev || ev->m_events == 0 || ev->m_cb == nullptr || ev->m_state != EV_STATE::S_FREE)
+        {
+            ret = false;
+            break;
+        }
+
+        ReactorPtr reactor = ev->reactor.lock();
+        if( !reactor )
+        {
+            ret = false;
+            break;
+        }
+
+        if( (ev->m_events & EV_TIMEOUT) && millisecond > 0)
+            ev->m_duration = std::chrono::milliseconds(millisecond);
+
+        //internal event for reactor, those event need to add then reactor is created
+        if( ev->m_is_internal )
+        {
+            //pass 
+        }
+        else
+        {
+            //when the reactor doesn't calls dispatch, m_is_running equals false, at this moment,
+            //all event need to add into m_async_events as they are added by other thread.
+            //current thread add a event to the Reactor that was run by
+            //other thread. for thread safe, this ev will be added delay
+            if( !reactor->m_is_running.load(std::memory_order_acquire) || reactor->m_running_tid != CurrentThread::tid() )
+            {
+                reactor->m_async_events->addOtherThreadEvent(ev);
+                ret = true;
+                break;
+            }
+        }
+
+
+        if( !reactor->m_impl->addEvent(ev)) 
+        {
+            ret = false;
+            break;
+        }
+
+        //events stores those event that were first time add to fd
+        int events = reactor->m_helper->addEvent(ev->m_fd, ev->m_events);
+        if( events )//should register those event for the fd in OS API level
+            reactor->m_poller->registerEvent(ev->m_fd, events);
+
+        ev->m_state = EV_STATE::S_LINK;
+
+        ret = true;
+    }while(0);
 
     return ret;
 }
+
+
+bool Reactor::delEvent(EventPtr &ev)
+{
+    bool ret = true;
+    do
+    {
+        if( !ev || ev->m_state == EV_STATE::S_FREE)
+        {
+            ret = false;
+            break;
+        }
+
+        ReactorPtr reactor = ev->reactor.lock();
+        if( !reactor )
+        {
+            ret = false;
+            break;
+        }
+
+        //current thread del a event from the Reactor that created by
+        //other thread. for thread safe, this ev will be del delay
+        if( !reactor->m_is_running.load(std::memory_order_acquire) || reactor->m_running_tid != CurrentThread::tid() )
+        {
+            reactor->m_async_events->delOtherThreadEvent(ev);
+            ret = true;
+            break;
+        }
+
+        if( !reactor->m_impl->delEvent(ev) )
+        {
+            ret = false;
+            break;
+        }
+
+        //events stores those event that weren't for fd
+        int events = reactor->m_helper->delEvent(ev->m_fd, ev->m_events);
+        if( events )//should unregister those event for the fd int OS API level
+            reactor->m_poller->unRegisterEvent(ev->m_fd, events);
+
+        ev->m_state = EV_STATE::S_FREE;
+
+        ret = true;
+    }while(0);
+
+    return ret;
+}
+
+
+}
+

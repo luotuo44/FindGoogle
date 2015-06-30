@@ -1,5 +1,5 @@
 //Filename: MutexLock.hpp
-//Date: 2015-2-20
+//Date: 2015-5-25
 
 //Author: luotuo44   http://blog.csdn.net/luotuo44
 
@@ -9,47 +9,38 @@
 #ifndef MUTEXLOCK_HPP
 #define MUTEXLOCK_HPP
 
-#include"Uncopyable.hpp"
+
 #include<pthread.h>
 
 
-class Mutex : Utility::Uncopyable
+class Condition;
+
+class Mutex
 {
 public:
-    Mutex()
-    {
-        pthread_mutex_init(&m_mutex, NULL);
-    }
+    Mutex();
+    ~Mutex();
 
-    ~Mutex()
-    {
-        pthread_mutex_destroy(&m_mutex);
-    }
+    Mutex(const Mutex &)=delete;
+    Mutex& operator = (const Mutex &)=delete;
 
-    void lock()
-    {
-        pthread_mutex_lock(&m_mutex);
-    }
+    void lock();
+    void unlock();
 
-    void unlock()
-    {
-        pthread_mutex_unlock(&m_mutex);
-    }
-
-    pthread_mutex_t* nativeMutex()
-    {
-        return &m_mutex;
-    }
+private:
+    friend class Condition;
 
 private:
     pthread_mutex_t m_mutex;
+
 };
 
 
-class MutexLock : public Utility::Uncopyable
+
+class MutexLock
 {
 public:
-    explicit MutexLock(Mutex& mutex)
+    explicit MutexLock(Mutex &mutex)
         : m_mutex(mutex)
     {
         m_mutex.lock();
@@ -60,10 +51,18 @@ public:
         m_mutex.unlock();
     }
 
+    MutexLock(const MutexLock &)=delete;
+    MutexLock& operator = (const MutexLock &)=delete;
+
 private:
-    Mutex& m_mutex;
+    Mutex &m_mutex;
 };
 
+
+
 #define MutexLock(x) error "Missing lock a mutex"
+
+
+
 
 #endif // MUTEXLOCK_HPP

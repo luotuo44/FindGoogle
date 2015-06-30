@@ -1,5 +1,5 @@
 //Filename: Reactor.hpp
-//Date: 2015-2-20
+//Date: 2015/6/6
 
 //Author: luotuo44   http://blog.csdn.net/luotuo44
 
@@ -9,43 +9,78 @@
 #ifndef REACTOR_HPP
 #define REACTOR_HPP
 
-#include"Uncopyable.hpp"
-#include<vector>
+
+#include<memory>
+#include<functional>
+#include<atomic>
 
 
-#include"typedefine.hpp"
+namespace Net
+{
 
 
-struct pollfd;
+#define  EV_READ 1
+#define  EV_WRITE 2
+#define  EV_TIMEOUT 4
+#define  EV_PERSIST 8
 
-class Observer;
+typedef std::function<void (int fd, int events, void *arg)> EVENT_CB;
 
-//use poll as the IO multiplexing
-class Reactor : public Utility::Uncopyable
+
+class Event;
+typedef std::shared_ptr<Event> EventPtr;
+
+class Epoller;
+typedef std::unique_ptr<Epoller> EpollerUPtr;
+
+class Reactor;
+typedef std::shared_ptr<Reactor> ReactorPtr;
+typedef std::weak_ptr<Reactor> ReactorWPtr;
+
+class Reactor
 {
 public:
-    Reactor();
     ~Reactor();
 
-    void setObserver(Observer *observer);
+    int dispatch();
+    void update(int fd, int events);
 
-    bool addFd(socket_t sockfd, int events);
-    void delFd(socket_t sockfd);
-    void updateEvent(socket_t sockfd, int new_events);
+    EventPtr createEvent(int fd, int events, EVENT_CB cb, void *arg);
 
-    int fdNum()const;
-
-    int dispatch(int timeout = -1);
-
-private:
-    void expand(socket_t sockfd);
+public:
+    static ReactorPtr newReactor();
+    static bool addEvent(EventPtr &ev, int millisecond = 0);
+    static bool delEvent(EventPtr &ev);
 
 private:
-    //vector的大小不是fd的个数，而是fd最大值+1(类似select的第一个参数)
-    std::vector<struct pollfd> m_event_set;
-    Observer *m_observer;
-    int m_fd_num;
+    Reactor();
+
+    Reactor(const Reactor &)=delete;
+    Reactor& operator = (const Reactor &)=delete;
+
+    Reactor(Reactor &&reactor)=default;
+    Reactor& operator = (Reactor &&reactor)=default;
+
+private:
+    class Helper;
+    class Impl;
+    class AsyncEvent;
+    typedef std::unique_ptr<Helper> HelperUPtr;
+    typedef std::unique_ptr<Impl> ImplUPtr;
+    typedef std::unique_ptr<AsyncEvent> AsyncEventUPtr;
+
+private:
+    EpollerUPtr m_poller;
+    HelperUPtr m_helper;
+    ImplUPtr m_impl;
+    AsyncEventUPtr m_async_events;//events that add by other thread
+
+    std::atomic<bool> m_is_running;
+    int m_running_tid;//id of the thread that create this Reactor
+    ReactorWPtr m_itself;
 };
+
+}
 
 
 
