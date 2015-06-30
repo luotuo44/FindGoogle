@@ -113,19 +113,19 @@ void threadFun(void *arg)
     readQueryList(dns_server, domain);
 
     cout<<"dns_server : ";
-    for(auto e : dns_server)
+    for(auto& e : dns_server)
         cout<<e<<'\t';
     cout<<endl;
 
     cout<<"domain : ";
-    for(auto e : domain)
+    for(auto& e : domain)
         cout<<e.first<<":"<<e.second<<endl;
     cout<<endl;
 
 
-    for(auto e : dns_server)
+    for(auto& e : dns_server)
     {
-        for(auto ee : domain)
+        for(auto& ee : domain)
         {
             dns_seacher->addQuery(ee.first, ee.second, e);
         }
