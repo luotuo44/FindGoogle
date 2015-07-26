@@ -127,7 +127,7 @@ void threadFun(void *arg)
     {
         for(auto& ee : domain)
         {
-            dns_seacher->addQuery(ee.first, ee.second, e);
+            dns_seacher->addQuery(std::move(ee.first), ee.second, e);
         }
     }
 

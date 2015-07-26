@@ -15,6 +15,8 @@
 #include<atomic>
 
 
+
+
 namespace Net
 {
 
@@ -30,6 +32,8 @@ typedef std::function<void (int fd, int events, void *arg)> EVENT_CB;
 class Event;
 typedef std::shared_ptr<Event> EventPtr;
 
+class Poller;
+typedef std::unique_ptr<Poller> PollerUPtr;
 class Epoller;
 typedef std::unique_ptr<Epoller> EpollerUPtr;
 
@@ -58,9 +62,6 @@ private:
     Reactor(const Reactor &)=delete;
     Reactor& operator = (const Reactor &)=delete;
 
-    Reactor(Reactor &&reactor)=default;
-    Reactor& operator = (Reactor &&reactor)=default;
-
 private:
     class Helper;
     class Impl;
@@ -76,7 +77,7 @@ private:
     AsyncEventUPtr m_async_events;//events that add by other thread
 
     std::atomic<bool> m_is_running;
-    int m_running_tid;//id of the thread that create this Reactor
+    int m_running_tid;//id of the thread that call dispatch for this Reactor
     ReactorWPtr m_itself;
 };
 

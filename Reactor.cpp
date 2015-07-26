@@ -18,6 +18,8 @@
 #include<list>
 #include<algorithm>
 #include<chrono>
+#include<system_error>
+#include<exception>
 
 #include"Logger.hpp"
 #include"Epoller.hpp"
@@ -29,13 +31,6 @@
 
 namespace Net
 {
-
-static void printError(const char *op)
-{
-    char buf[50];
-    snprintf(buf, sizeof(buf), "%m");
-    LOG(Log::ERROR)<<op<<" fail: "<<errno;
-}
 
 //this class is used to count the how many read and write events register in a fd
 class Reactor::Helper
@@ -50,13 +45,12 @@ public:
 
     Helper(const Helper &)=delete;
     Helper& operator = (const Helper &)=delete;
-    Helper(Helper &&)=default;
-    Helper& operator = (Helper &&)=default;
+    Helper(Helper &&)noexcept=default;
+    Helper& operator = (Helper &&)noexcept=default;
 
     int addEvent(int fd, int events)
     {
         int ret = 0;
-
         if( (events & EV_READ)  && addReadEvent(fd) )
             ret |= EV_READ;//first register read event for fd
 
@@ -70,7 +64,6 @@ public:
     int delEvent(int fd, int events)
     {
         int ret = 0;
-
         if( (events & EV_READ)  && delReadEvent(fd) )
             ret |= EV_READ;//first event deregister read event for fd
 
@@ -112,6 +105,9 @@ private:
 private:
     typedef struct helper_tag
     {
+        helper_tag(helper_tag &&)noexcept=default;
+        helper_tag& operator = (helper_tag &&)noexcept=default;
+
         int r_num;
         int w_num;
 
@@ -163,7 +159,7 @@ public:
     Event(int fd, int events, EVENT_CB cb, void *arg)
         : m_fd(fd), m_events(events), m_re_events(0),
           m_cb(cb), m_arg(arg),
-          m_state(EV_STATE::S_FREE)
+          m_state(EV_STATE::S_FREE), m_is_internal(false)
     {}
 
 public:
@@ -202,8 +198,6 @@ public:
     Impl(const Impl &)=delete;
     Impl& operator = (const Impl &)=delete;
 
-    Impl(Impl &&)=default;
-    Impl& operator = (Impl &&)=default;
 
     int eventNum()const { return m_event_num; }
     void update(int fd, int events);
@@ -238,7 +232,6 @@ void Reactor::Impl::update(int fd, int events)
 
         m_timer_events[0]->m_re_events = m_timer_events[0]->m_events & EV_TIMEOUT;
         m_active_events.insert({m_timer_events[0]->m_fd, m_timer_events[0]});
-        //LOG(Log::INFO)<<"timeout "<<m_timer_events[0]->m_fd;
         return ;
     }
 
@@ -277,14 +270,6 @@ void Reactor::Impl::handleActiveEvent()
             delTimerEvent(it->second);
             addTimerEvent(it->second);
         }
-
-        if( it->second->m_cb == nullptr)
-        {
-            LOG(Log::ERROR)<<"cb == nullptr";
-        }
-
-        if( it->second->m_re_events & EV_TIMEOUT)
-            ;//LOG(Log::INFO)<<"has timeout event "<<it->second->m_fd;
 
         it->second->m_cb(it->second->m_fd, it->second->m_re_events, it->second->m_arg);
         m_active_events.erase(it++);
@@ -429,8 +414,6 @@ public:
     ~AsyncEvent()=default;
     AsyncEvent(const AsyncEvent&)=delete;
     AsyncEvent& operator = (const AsyncEvent&)=delete;
-    AsyncEvent(AsyncEvent &&)=default;
-    AsyncEvent& operator = (AsyncEvent &&)=default;
 
 
     void addOtherThreadEvent(EventPtr &ev);
@@ -439,7 +422,7 @@ public:
     void createNotifyEvent(ReactorPtr &reactor);
     void handleNotifyEvent(int fd, int events, void *arg);
 
-    bool hasSomeEvent()const { return m_add_list.ev_list.size() + m_del_list.ev_list.size(); }
+    bool hasSomeEvent()const { return m_add_list.ev_list.size() + m_add_list.ev_list.size(); }
 private:
     EventPtr m_notify_ev;
     int m_notify_pipe[2];
@@ -453,40 +436,29 @@ void Reactor::AsyncEvent::createNotifyEvent(ReactorPtr &reactor)
 {
     assert(reactor);
 
-    if( ::pipe(m_notify_pipe) == -1)
+    if( !SocketOps::new_pipe(m_notify_pipe, true, false) )
     {
-        printError("fail to create notify pipe ");
-        ::exit(-1);
+        throw std::system_error(errno, std::system_category(), "Reactor::AsyncEvent::createNotifyEvent fail ");
     }
 
-    if( SocketOps::make_nonblocking(m_notify_pipe[0]) == -1)
-    {
-        LOG(Log::ERROR)<<"fail to make m_notify pipe non blocking";
-        ::exit(-1);
-    }
 
     m_notify_ev = reactor->createEvent(m_notify_pipe[0], EV_READ | EV_PERSIST,
                                        std::bind(&Reactor::AsyncEvent::handleNotifyEvent, this, m_notify_pipe[0], EV_READ, nullptr), nullptr);
 
+    if( !m_notify_ev )
+        throw std::runtime_error("fail to create notify event");
 
     m_notify_ev->m_is_internal = true;
 
-    if( !m_notify_ev )
-    {
-        LOG(Log::ERROR)<<"fail to create notify event";
-        ::exit(-1);
-    }
 
     if( !Reactor::addEvent(m_notify_ev) )
-    {
-        LOG(Log::ERROR)<<"fail to add notify event";
-        ::exit(-1);
-    }
+        throw std::runtime_error("fail to add notify event");
 }
 
 
 void Reactor::AsyncEvent::addOtherThreadEvent(EventPtr &ev)
 {
+    assert(ev);
     MutexLock lock(m_add_list.mutex);
     m_add_list.ev_list.push_back(ev);
 
@@ -496,6 +468,7 @@ void Reactor::AsyncEvent::addOtherThreadEvent(EventPtr &ev)
 
 void Reactor::AsyncEvent::delOtherThreadEvent(EventPtr &ev)
 {
+    assert(ev);
     MutexLock lock(m_del_list.mutex);
     m_del_list.ev_list.push_back(ev);
 
@@ -518,7 +491,7 @@ void Reactor::AsyncEvent::handleNotifyEvent(int fd, int events, void *arg)
         case 'a' :
         {
             MutexLock lock(m_add_list.mutex);
-            EventPtr ev = m_add_list.ev_list.front();
+            EventPtr ev = std::move(m_add_list.ev_list.front());
             m_add_list.ev_list.pop_front();
             Reactor::addEvent(ev);
             break;
@@ -527,7 +500,7 @@ void Reactor::AsyncEvent::handleNotifyEvent(int fd, int events, void *arg)
         case 'd' :
         {
             MutexLock lock(m_del_list.mutex);
-            EventPtr ev = m_del_list.ev_list.front();
+            EventPtr ev = std::move(m_del_list.ev_list.front());
             m_del_list.ev_list.pop_front();
             Reactor::delEvent(ev);
             break;
@@ -564,19 +537,27 @@ int Reactor::dispatch()
     while(1)
     {
         int event_num = m_impl->eventNum();
-        if( event_num < 2  && !m_async_events->hasSomeEvent())//implicit a notify event
+        if( event_num < 2 && !m_async_events->hasSomeEvent() )//implicit a notify event
         {
             ret = 0;
             break;
         }
 
         int time_duration = m_impl->minTimerDuration();
-        //LOG(Log::DEBUG)<<"time_duration = "<<time_duration;
         ret = m_poller->dispatch(time_duration);
         if( ret <= 0)
             break;
 
         m_impl->handleActiveEvent();
+    }
+
+    if( ret == -1)
+    {
+        throw std::system_error(errno, std::system_category(), "epoll fail");
+    }
+    else if( ret == 0)
+    {
+        LOG(Log::INFO)<<"no event need to listen";
     }
 
 	return ret;
@@ -595,7 +576,7 @@ EventPtr Reactor::createEvent(int fd, int events, EVENT_CB cb, void *arg)
     if( fd < 0  && (events & (~(EV_TIMEOUT|EV_PERSIST))) )
         return EventPtr();
 
-    EventPtr ev(new Event(fd, events, cb, arg) );
+    EventPtr ev = std::make_shared<Event>(fd, events, cb, arg);
     ev->reactor = m_itself;
 
     return ev;
@@ -645,7 +626,7 @@ bool Reactor::addEvent(EventPtr &ev, int millisecond)
         //internal event for reactor, those event need to add then reactor is created
         if( ev->m_is_internal )
         {
-            //pass 
+            //pass
         }
         else
         {
@@ -653,14 +634,13 @@ bool Reactor::addEvent(EventPtr &ev, int millisecond)
             //all event need to add into m_async_events as they are added by other thread.
             //current thread add a event to the Reactor that was run by
             //other thread. for thread safe, this ev will be added delay
-            if( !reactor->m_is_running.load(std::memory_order_acquire) || reactor->m_running_tid != CurrentThread::tid() )
+            if( !reactor->m_is_running.load(std::memory_order_acquire) || reactor->m_running_tid != CurrentThread::tid())
             {
                 reactor->m_async_events->addOtherThreadEvent(ev);
                 ret = true;
                 break;
             }
         }
-
 
         if( !reactor->m_impl->addEvent(ev)) 
         {
@@ -730,4 +710,3 @@ bool Reactor::delEvent(EventPtr &ev)
 
 
 }
-

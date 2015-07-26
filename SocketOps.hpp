@@ -33,6 +33,7 @@ int make_nonblocking(int fd);
 //cannot connect immediately, and need to try again
 int tcp_connect_server(const char *server_ip, int port, int sockfd);
 
+bool new_pipe(int fd[2], bool r_nonblocking, bool w_nonblocking);
 
 int new_tcp_socket_connect_server(const char* server_ip, int port, int *sockfd);
 
@@ -41,7 +42,7 @@ int connecting_server(int fd);
 bool wait_to_connect(int err);
 bool refuse_connect(int err);
 
-std::string parseIP(const unsigned char *buff);
+std::string parseIP(const unsigned char *buf);
 
 int write(int fd, char *buf, int len);
 int read(int fd, char *buf, int len);
@@ -53,6 +54,7 @@ int readn(int fd, char *buf, int n);
 }
 
 }
+
 
 
 #endif // SOCKETOPS_HPP

@@ -10,24 +10,10 @@
 
 #include<sys/time.h>
 
-#include<stdlib.h>
-#include<string.h>
-#include<stdio.h>
 #include<errno.h>
+#include<system_error>
 
 #include"MutexLock.hpp"
-#include"Logger.hpp"
-
-
-static void assertCondition(const char *op, int result)
-{
-    if(result)
-    {
-        char buf[50];
-        snprintf(buf, sizeof(buf), "%m");
-        LOG(Log::FATAL)<<op<<" fail : "<<buf;
-    }
-}
 
 
 //set the t to abstime that after msecs Milliseconds from now
@@ -62,19 +48,25 @@ static void mkTime(struct timespec* t, int msecs)
 Condition::Condition(Mutex &mutex)
     : m_mutex(mutex)
 {
-    assertCondition("init condition", pthread_cond_init(&m_cond, NULL));
+    int ret = pthread_cond_init(&m_cond, nullptr);
+    if( ret != 0 )
+        throw std::system_error(ret, std::system_category(), "init condition fail");
 }
 
 
 Condition::~Condition()
 {
-    assertCondition("destroy conditon", pthread_cond_destroy(&m_cond));
+    int ret = pthread_cond_destroy(&m_cond);
+    if( ret != 0 )
+        throw std::system_error(ret, std::system_category(), "destroy condition fail");
 }
 
 
 void Condition::wait()
 {
-    assertCondition("wait condition", pthread_cond_wait(&m_cond, &m_mutex.m_mutex));
+    int ret = pthread_cond_wait(&m_cond, &m_mutex.m_mutex);
+    if( ret != 0 )
+        throw std::system_error(ret, std::system_category(), "wait condition fail");
 }
 
 
@@ -87,8 +79,7 @@ bool Condition::waitForMilliseconds(int msecs)
     int ret = pthread_cond_timedwait(&m_cond, &m_mutex.m_mutex, &abs_time);
 
     if( ret != 0 && ret != ETIMEDOUT)
-        assertCondition("wait condition with time", ret);//will abort
-
+        throw std::system_error(ret, std::system_category(), "wait condition with time fail ");
 
     return ret != ETIMEDOUT;
 }
@@ -96,13 +87,16 @@ bool Condition::waitForMilliseconds(int msecs)
 
 void Condition::notify()
 {
-    assertCondition("notify condition", pthread_cond_signal(&m_cond));
+    int ret = pthread_cond_signal(&m_cond);
+    if( ret != 0 )
+        throw std::system_error(ret, std::system_category(), "notify condition fail");
 }
 
 
 void Condition::notifyAll()
 {
-    assertCondition("notifyAll condtion", pthread_cond_broadcast(&m_cond));
+    int ret = pthread_cond_broadcast(&m_cond);
+    if( ret != 0 )
+        throw std::system_error(ret, std::system_category(), "notifyAll condtion fail");
 }
-
 

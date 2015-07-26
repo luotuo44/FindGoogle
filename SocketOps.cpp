@@ -77,6 +77,32 @@ int make_nonblocking(int fd)
 }
 
 
+bool new_pipe(int fd[2], bool r_nonblocking, bool w_nonblocking)
+{
+    if( ::pipe(fd) == -1 )
+        return false;
+
+    bool ret = false;
+    do
+    {
+        if( r_nonblocking && make_nonblocking(fd[0])==-1 )
+            break;
+
+        if( w_nonblocking && make_nonblocking(fd[1])==-1 )
+            break;
+
+        ret = true;
+    }while(0);
+
+    if(!ret)
+    {
+        ::close(fd[0]);
+        ::close(fd[1]);
+    }
+
+    return ret;
+}
+
 typedef struct sockaddr SA;
 
 
@@ -169,15 +195,6 @@ int connecting_server(int fd)
 }
 
 
-std::string parseIP(const unsigned char *buff)
-{
-    const unsigned int *p = reinterpret_cast<const unsigned int*>(buff);
-
-    struct sockaddr_in addr;
-    addr.sin_addr.s_addr = *p;
-    return ::inet_ntoa(addr.sin_addr);
-}
-
 
 bool wait_to_connect(int err)
 {
@@ -190,6 +207,14 @@ bool refuse_connect(int err)
     return err == ECONNREFUSED;
 }
 
+std::string parseIP(const unsigned char *buf)
+{
+    const unsigned int *p = reinterpret_cast<const unsigned int*>(buf);
+
+    struct sockaddr_in addr;
+    addr.sin_addr.s_addr = *p;
+    return ::inet_ntoa(addr.sin_addr);
+}
 
 //-1: system call error
 //0: write 0 byte

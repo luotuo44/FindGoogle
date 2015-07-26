@@ -11,6 +11,7 @@
 
 #include<assert.h>
 #include<stdlib.h>
+#include<system_error>
 
 #include"Reactor.hpp"
 #include"Logger.hpp"
@@ -24,12 +25,7 @@ Epoller::Epoller()
 {
     m_efd = ::epoll_create(1);
     if( m_efd == -1)
-    {
-        char buf[50];
-        snprintf(buf, sizeof(buf), "%m");
-        LOG(Log::ERROR)<<"epoll_create fail "<<buf;
-        ::exit(-1);
-    }
+        throw std::system_error(errno, std::system_category(), "epoll_create fail");
 
     m_wr_count.reserve(32);
 }
@@ -44,6 +40,8 @@ void Epoller::setObserver(ReactorPtr &observer)
 
 int Epoller::listenEvent(int fd, int events)
 {
+    assert(fd >= 0);
+
     int ev = 0;
     if( events & EV_READ)
     {
@@ -62,6 +60,8 @@ int Epoller::listenEvent(int fd, int events)
 
 int Epoller::hasWhatEvent(int fd)
 {
+    assert(fd >= 0);
+
     int events = 0;
     if( m_wr_count[fd].hasW() )
         events |= EV_WRITE;
@@ -74,6 +74,7 @@ int Epoller::hasWhatEvent(int fd)
 
 void Epoller::registerEvent(int fd, int events)
 {
+    assert(fd >= 0);
     if( !judgeFd(fd) )
         return;
 
@@ -113,9 +114,6 @@ void Epoller::unRegisterEvent(int fd, int events)
 
 bool Epoller::judgeFd(int fd)
 {
-    if( fd < 0 )
-        return false;
-
     if( static_cast<size_t>(fd) >= m_wr_count.size() )
     {
         //should not use push_back
@@ -132,6 +130,7 @@ bool Epoller::judgeFd(int fd)
 
 void Epoller::addOrModFd(int fd, int events, int ctl)
 {
+    assert( fd >= 0);
     epoll_event ev;
     ev.data.fd = fd;
     ev.events = events;
@@ -150,6 +149,7 @@ void Epoller::addOrModFd(int fd, int events, int ctl)
 
 void Epoller::delFd(int fd)
 {
+    assert( fd >= 0);
     if( ::epoll_ctl(m_efd, EPOLL_CTL_DEL, fd, nullptr) == -1)
     {
         char buf[50];
@@ -180,7 +180,6 @@ int Epoller::dispatch(int millisecond)
 
     if( ret == 0)//timeout event
     {
-        LOG(Log::INFO)<<"timeout "<<millisecond;
         reactor->update(-1, EV_TIMEOUT);
         return 1;
     }
@@ -196,8 +195,6 @@ int Epoller::dispatch(int millisecond)
         if( what & (EPOLLERR|EPOLLHUP) )
             events |= EV_READ | EV_WRITE;
 
-        if( events & EV_TIMEOUT )
-            LOG(Log::INFO)<<"has timeout event "<<m_fd_vec[i].data.fd;
         reactor->update(m_fd_vec[i].data.fd, events);
     }
 
@@ -206,3 +203,4 @@ int Epoller::dispatch(int millisecond)
 
 
 }
+

@@ -8,50 +8,40 @@
 
 
 #include"MutexLock.hpp"
-#include<stdio.h>
-#include<string.h>
-#include<stdlib.h>
-
-#include"Logger.hpp"
-
-
-
-
-static void assertMutex(const char *op, int result)
-{
-    if(result)
-    {
-        char buf[50];
-        snprintf(buf, sizeof(buf), "%m");
-        LOG(Log::FATAL)<<op<<" fail : "<<buf;
-    }
-}
+#include<system_error>
 
 
 
 Mutex::Mutex()
 {
-    assertMutex("init mutex", pthread_mutex_init(&m_mutex, NULL));
+    int ret = pthread_mutex_init(&m_mutex, nullptr);
+    if( ret != 0 )
+        throw std::system_error(ret, std::system_category(), "init mutex fail");
 }
 
 
 Mutex::~Mutex()
 {
-    assertMutex("destroy mutex", pthread_mutex_destroy(&m_mutex));
+    int ret = pthread_mutex_destroy(&m_mutex);
+    if( ret != 0 )
+        throw std::system_error(ret, std::system_category(), "destroy mutex fail");
 }
 
 
 void Mutex::lock()
 {
-    assertMutex("lock mutex", pthread_mutex_lock(&m_mutex));
+    int ret = pthread_mutex_lock(&m_mutex);
+    if( ret != 0 )
+        throw std::system_error(ret, std::system_category(), "lock mutex fail");
 }
 
 
 void Mutex::unlock()
 {
-    assertMutex("unlock mutex", pthread_mutex_unlock(&m_mutex));
+    int ret = pthread_mutex_unlock(&m_mutex);
+
+    if( ret != 0 )
+        throw std::system_error(ret, std::system_category(), "unlock mutex fail");
 }
-
-
 
 

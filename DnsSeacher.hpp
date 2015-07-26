@@ -33,11 +33,9 @@ public:
 
     DnsSeacher(const DnsSeacher& )=delete;
     DnsSeacher& operator = (const DnsSeacher& )=delete;
-    DnsSeacher(DnsSeacher &&)=default;
-    DnsSeacher& operator = (DnsSeacher &&)=default;
 
 public:
-    void addQuery(std::string domain, int port, std::string dns_server);
+    void addQuery(const std::string &domain, int port, const std::string &dns_server);
     void setObserver(const DomainExplorerPtr &observer);
     void run();
     void eventCB(int fd, int events, void *arg);

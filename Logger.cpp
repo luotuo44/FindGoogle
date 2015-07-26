@@ -127,4 +127,3 @@ void Log::addStrTime()
     m_log_buf.append(str_time);
 }
 
-

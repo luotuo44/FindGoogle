@@ -16,6 +16,7 @@
 #include<assert.h>
 
 #include<iostream>
+#include<system_error>
 
 #include"SocketOps.hpp"
 #include"Reactor.hpp"
@@ -55,14 +56,8 @@ DomainExplorer::DomainExplorer()
     :  m_result_cb(nullptr),
       m_reactor(Net::Reactor::newReactor())
 {
-    int ret = ::pipe(m_fd);
-    if( ret == -1)
-    {
-        char buf[50];
-        snprintf(buf, sizeof(buf), "%m");
-        LOG(Log::ERROR)<<"fail to create pipe "<<buf;
-        ::exit(-1);
-    }
+    if( !Net::SocketOps::new_pipe(m_fd, false, false) )
+        throw std::system_error(errno,  std::system_category(), "fail to create pipe: ");
 
     m_pipe_ev = m_reactor->createEvent(m_fd[0], EV_READ|EV_PERSIST, std::bind(&DomainExplorer::pipeEventCB, this, m_fd[0], EV_READ, nullptr), nullptr);
     Net::Reactor::addEvent(m_pipe_ev);
@@ -71,13 +66,13 @@ DomainExplorer::DomainExplorer()
 
 DomainExplorer::~DomainExplorer()
 {
-    ::close(m_fd[0]);
-    ::close(m_fd[1]);
+    Net::SocketOps::close_socket(m_fd[0]);
+    Net::SocketOps::close_socket(m_fd[1]);
 }
 
 
 
-void DomainExplorer::newDnsResult(std::string domain, int port, std::vector<std::string> ips)
+void DomainExplorer::newDnsResult(std::string &&domain, int port, std::vector<std::string> &&ips)
 {
     //if port == -1, means that dnsseacher has finished dns query
     if( port == -1)
@@ -118,13 +113,13 @@ void DomainExplorer::pipeEventCB(int fd, int events, void *arg)
         m_new_domain_ips.pop_front();
     }
 
-    for(auto e : ips.second)
+    for(auto& e : ips.second)
     {
         DomainConnPtr d = std::make_shared<DomainConn>();
         d->port = port;
         d->state = DomainState::init;
         d->domain = ips.first;
-        d->ip = e;
+        d->ip = std::move(e);
 
         if( tryNewConnect(d) )
             m_conns.insert({d->fd, d});

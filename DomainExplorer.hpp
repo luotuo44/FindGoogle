@@ -38,11 +38,9 @@ public:
 
     DomainExplorer(const DomainExplorer&)=delete;
     DomainExplorer& operator = (const DomainExplorer&)=delete;
-    DomainExplorer(DomainExplorer &&)=default;
-    DomainExplorer& operator = (DomainExplorer&&)=default;
 
     void run();
-    void newDnsResult(std::string domain, int port, std::vector<std::string> ips);
+    void newDnsResult(std::string &&domain, int port, std::vector<std::string> &&ips);
 
     void eventCB(int fd, int events, void *arg);
     void pipeEventCB(int fd, int events, void *arg);

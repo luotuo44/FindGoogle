@@ -19,6 +19,7 @@ LogBuffer::LogBuffer()
 
 
 
+
 static const char digits[] = "9876543210123456789";
 static const char* zero  = digits + 9;
 
@@ -129,5 +130,4 @@ LogBuffer& LogBuffer::operator<<(double v)
 
     return *this;
 }
-
 

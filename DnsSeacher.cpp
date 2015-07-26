@@ -71,7 +71,7 @@ void DnsSeacher::setObserver(const DomainExplorerPtr &observer)
 
 
 
-void DnsSeacher::addQuery(std::string domain, int port, std::string dns_server)
+void DnsSeacher::addQuery(const std::string &domain, int port, const std::string &dns_server)
 {
     DnsQueryPtr q = std::make_shared<DnsQuery>();
 
@@ -90,8 +90,8 @@ void DnsSeacher::addQuery(std::string domain, int port, std::string dns_server)
     else
         q->state = DnsState::connecting_dns;
 
-    q->domain = std::move(domain);
-    q->dns_server = std::move(dns_server);
+    q->domain = domain;
+    q->dns_server = dns_server;
     q->port = port;
 
     Net::Reactor::addEvent(q->ev);

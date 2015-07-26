@@ -13,6 +13,7 @@
 #include<pthread.h>
 
 
+
 class Condition;
 
 class Mutex
@@ -27,12 +28,10 @@ public:
     void lock();
     void unlock();
 
-private:
     friend class Condition;
 
 private:
     pthread_mutex_t m_mutex;
-
 };
 
 

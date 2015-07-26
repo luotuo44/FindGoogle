@@ -75,7 +75,6 @@ Thread::~Thread()
         MutexLock lock(m_mutex);
         //if user call start() function, let the thread really runs
         //before destruct the Thread object.
-        //NOTE: this code just make it more safe, not ensure safe everytime
         while( m_started && !m_really_run)
             m_cond.wait();
     }
@@ -136,4 +135,3 @@ void* Thread::realStartThread(void *arg)
 
 	return nullptr;
 }
-
