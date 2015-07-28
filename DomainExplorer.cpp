@@ -122,7 +122,7 @@ void DomainExplorer::pipeEventCB(int fd, int events, void *arg)
         d->ip = std::move(e);
 
         if( tryNewConnect(d) )
-            m_conns.insert({d->fd, d});
+            m_conns[d->fd] = d;
     }
 
     (void)fd; (void)events; (void)arg;
@@ -190,7 +190,7 @@ void DomainExplorer::eventCB(int fd, int events, void *arg)
         d->fd = -1;
         if( d->try_times < 4 && tryNewConnect(d))//这个conn已经测试完毕，尝试下一次
         {
-            m_conns.insert({d->fd, d});
+            m_conns[d->fd] = d;
         }
         else if( m_result_cb ) 
         {

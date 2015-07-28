@@ -96,6 +96,7 @@ void DnsSeacher::addQuery(const std::string &domain, int port, const std::string
 
     Net::Reactor::addEvent(q->ev);
 
+    m_querys[q->fd] = q;
     m_querys.insert({q->fd, q});
 }
 
