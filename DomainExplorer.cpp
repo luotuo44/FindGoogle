@@ -68,6 +68,7 @@ DomainExplorer::~DomainExplorer()
 {
     Net::SocketOps::close_socket(m_fd[0]);
     Net::SocketOps::close_socket(m_fd[1]);
+    Net::Reactor::delEvent(m_pipe_ev);
 }
 
 
