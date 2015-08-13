@@ -84,7 +84,7 @@ void DnsSeacher::addQuery(const std::string &domain, int port, const std::string
         return ;
     }
 
-    updateEvent(q, EV_WRITE|EV_PERSIST);
+    updateEvent(q, EV_WRITE|EV_PERSIST|EV_TIMEOUT, 10*1000);//just wait for 10 seconds
     if( ret == 0)//connect success
         q->state = DnsState::new_try;
     else

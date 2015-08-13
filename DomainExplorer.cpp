@@ -151,7 +151,7 @@ bool DomainExplorer::tryNewConnect(DomainConnPtr &d)
         //cannot transmit to connect_fail, because c.fd will not trigger any event
     }
 
-    updateEvent(d, EV_WRITE|EV_PERSIST);
+    updateEvent(d, EV_WRITE|EV_PERSIST|EV_TIMEOUT, 10*1000);//just wait for 10 seconds
     if( ret == 0 )//connect success
         d->state = DomainState::connect_success;
     else
