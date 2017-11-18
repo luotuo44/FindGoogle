@@ -70,9 +70,14 @@ void do_testParseDnsPacket(const std::string &host, const std::string &hex_str)
     std::vector<uchar> vec = hexToUVec(hex_str);
     Net::DnsPacketDecoder decoder(vec);
 
-    if(!decoder.isValid())
+    if(decoder.isInvalid())
     {
         std::cout<<"is not valid"<<std::endl;
+        return ;
+    }
+    else if(decoder.isImcomplete())
+    {
+        std::cout<<"is not complete"<<std::endl;
         return ;
     }
 

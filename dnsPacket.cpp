@@ -145,89 +145,91 @@ DnsPacketDecoder::DnsPacketDecoder(const std::vector<uchar> &data)
 
 void DnsPacketDecoder::parsePacket()
 {
-    m_valid = parseHeader() && parseBody();
+    m_parse_res = parseHeader();
+    if(m_parse_res == 0)
+        m_parse_res = parseBody();
 }
 
 
-bool DnsPacketDecoder::parseHeader()
+int DnsPacketDecoder::parseHeader()
 {
     m_packet_id = Helper::getSizeValue(m_origin_data.data(), m_origin_data.data()+2);
 
 
     DnsFlag flag(Helper::subVec(m_origin_data, 2, 2));
     if(flag.getQR() != 1 || flag.getRcode() != 0)
-        return false;
+        return 2;//data invalid
 
 
     const uchar *pos = m_origin_data.data() + 4;
     size_t question_num = Helper::getSizeValue(pos, pos+2);
     size_t res_num = Helper::getSizeValue(pos+2, pos+4);
     if( question_num == 0 || res_num == 0)
-        return false;
+        return 2;//data invalid
 
 
-    return m_origin_data.size() > 12;
+    return m_origin_data.size() > 12 ? 0 : 1;
 }
 
 
 
-bool DnsPacketDecoder::parseBody()
+int DnsPacketDecoder::parseBody()
 {
-    bool ret = parseQuestion() && parseAnswer();
-    if(ret && m_cname_record.size() == 1)
+    int ret = parseQuestion();
+    ret = (ret == 0) ? parseAnswer() : ret;
+    if( ret == 0 && m_cname_record.size() == 1 )
         m_cname_record.clear();//没有使用cname
 
     return ret;
 }
 
 
-bool DnsPacketDecoder::parseQuestion()
+int DnsPacketDecoder::parseQuestion()
 {
     m_pos = 12;
     m_query_host = parseHost(m_pos);
 
     if(m_pos+4 >= m_origin_data.size())
-        return false;
+        return 1;//imcomplete
 
     const uchar *data = m_origin_data.data() + m_pos;
     size_t query_kind = Helper::getSizeValue(data, data+2);
     size_t query_class = Helper::getSizeValue(data+2, data+4);
     m_pos += 4;
 
-    return query_kind == QueryKind::A && query_class == 1;
+    return query_kind == QueryKind::A && query_class == 1 ? 0 : 2;
 }
 
 
-bool DnsPacketDecoder::parseAnswer()
+int DnsPacketDecoder::parseAnswer()
 {
-	std::string answer_name = parseHost(m_pos);
-	Helper::trim(answer_name, '.');
-
+    std::string answer_name = parseHost(m_pos);
+    Helper::trim(answer_name, '.');
     if(m_pos+10 >= m_origin_data.size())
-        return false;
+        return 1;//imcomplete
 
     const uchar *data = m_origin_data.data() + m_pos;
     size_t answer_kind = Helper::getSizeValue(data, data+2);
     size_t answer_class = Helper::getSizeValue(data+2, data+4);
     if(answer_class != 1 || (answer_kind != QueryKind::A && answer_kind != QueryKind::CNAME))
-        return false;
+        return 2;//data invalid
 
-    Helper::getSizeValue(data+4, data+8);
+    Helper::getSizeValue(data+4, data+8);//ttl
     size_t res_len = Helper::getSizeValue(data+8, data+10);
     m_pos += 10;
 
 
     if(m_pos+res_len > m_origin_data.size())
-		        return false;
+        return 1;//imcomplete
 
     if(answer_kind == QueryKind::A)
         m_a_record.push_back(parseIP(m_origin_data.data()+m_pos));
 
     if(m_cname_record.empty() || answer_name != m_cname_record.back())
-		m_cname_record.push_back(std::move(answer_name));
+        m_cname_record.push_back(std::move(answer_name));
 
     m_pos += res_len;
-    return m_pos < m_origin_data.size() ? parseAnswer() : true;
+    return m_pos < m_origin_data.size() ? parseAnswer() : 0;//finish
 }
 
 
