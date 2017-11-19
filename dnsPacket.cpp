@@ -10,6 +10,9 @@
 #include<string.h>
 #include<stddef.h>
 
+
+#include<algorithm>
+
 #include"helper.h"
 
 
@@ -86,7 +89,8 @@ std::vector<uchar> getDnsQuestionPart(const std::string &host, QueryKind kind)
 std::vector<uchar> getDnsPacketByHost(const std::string &host)
 {
     std::vector<uchar> packet;
-    packet.reserve(12 + host.size() + 4 + 6);
+    packet.reserve(2 + 12 + host.size() + 4 + 6);
+    packet.resize(2);//基于TCP的DNS查询需要在包头加两个字节的长度信息
 
     packet += Helper::toUVec(int16_t{13});//id
 
@@ -111,6 +115,9 @@ std::vector<uchar> getDnsPacketByHost(const std::string &host)
     packet += getDnsQuestionPart(host, QueryKind::A);
 
 
+    auto len_vec = Helper::toUVec(static_cast<int16_t>(packet.size()-2));
+    std::copy(len_vec.begin(), len_vec.end(), packet.begin());
+
     return packet;
 }
 
@@ -134,10 +141,14 @@ namespace Net
 
 DnsPacketDecoder::DnsPacketDecoder(const std::vector<uchar> &data)
 {
-    if(data.size() < 12)
+    if(data.size() < 2 + 12)//2是DNS包的长度， 12是包头
         return ;
 
-    m_origin_data = data;
+    auto packet_len = Helper::getSizeValue(data.data(), data.data()+2);
+    if(packet_len+2 > data.size())
+        return ;
+
+    m_origin_data = Helper::subVec(data, 2);
 
     parsePacket();
 }

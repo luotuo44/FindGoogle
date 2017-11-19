@@ -160,8 +160,8 @@ std::vector<uchar> toUVec(T t)
     std::vector<uchar> vec;
     for(size_t i = 0; i < sizeof(T); ++i)
     {
-        vec.push_back(t&0xF);
-        t >>= 4;
+        vec.push_back(t&0xFF);
+        t >>= 8;
     }
 
     std::reverse(vec.begin(), vec.end());
