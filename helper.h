@@ -146,6 +146,7 @@ private:
 
 std::string& trim(std::string &str);
 std::string& trim(std::string &str, char ch);
+std::pair<StrVec, std::vector<StrIntPair>> parseConfig(const std::string &filename);
 
 
 std::vector<uchar> subVec(const std::vector<uchar> &vec, size_t pos, size_t n=std::numeric_limits<size_t>::max());

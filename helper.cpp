@@ -79,6 +79,51 @@ std::string& trim(std::string &str, char ch)
 }
 
 
+std::pair<StrVec, std::vector<StrIntPair>> parseConfig(const std::string &filename)
+{
+    std::ifstream in(filename.c_str());
+    if( !in )
+        throw std::logic_error("config file " + filename + " doesnot exist");
+
+
+    std::set<std::string> dns_server_set;
+    std::set<std::string> domain_set;
+
+    std::string line;
+    while( in>>line )
+    {
+        trim(line);
+        std::string::size_type pos = 0;
+        if(line.empty() || line[0] == '#' || (pos = line.find(':')) == std::string::npos)
+            continue;
+
+
+        std::string kind = line.substr(0, pos);
+        if(kind == "dns_server")
+            dns_server_set.insert(StringSplit(line.substr(pos+1), ";"), StringSplit());
+        else if(kind == "domain")
+            domain_set.insert(StringSplit(line.substr(pos+1), ";"), StringSplit());
+    }
+
+
+    std::vector<StrIntPair> domain_port;
+    StrVec vec;
+    for(const auto &e : domain_set)
+    {
+        vec.assign(StringSplit(e, ":"), StringSplit());
+        if(vec.size() == 2)
+            domain_port.emplace_back(std::move(vec[0]), std::stoi(vec[1]));
+        else if( vec.size() == 1 && domain_set.find(vec[0] + ":443") == domain_set.end())
+            domain_port.emplace_back(std::move(vec[0]), 443);
+    }
+
+
+    StrVec dns_server_vec(dns_server_set.begin(), dns_server_set.end());
+    return std::make_pair(std::move(dns_server_vec), std::move(domain_port));
+}
+
+
+
 
 
 std::vector<uchar> subVec(const std::vector<uchar> &vec, size_t pos, size_t n)
