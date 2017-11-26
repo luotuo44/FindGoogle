@@ -51,10 +51,18 @@ bufferevent* EventLoop::newBufferevent()
     if( bev == nullptr )
     {
         logMsg(WARNING, "fail to allocate bufferevent");
-        throw "fail to allocate bufferevent";
+        throw  std::logic_error("fail to allocate bufferevent");
     }
 
     return bev;
+}
+
+
+event* EventLoop::newEvent()
+{
+    event *ev = new event;
+    ev->ev_base = m_base;
+    return ev;
 }
 
 

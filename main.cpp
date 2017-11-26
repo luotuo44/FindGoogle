@@ -15,6 +15,7 @@
 #include"EventLoop.h"
 #include"TcpClient.h"
 #include"dnsPacket.h"
+#include"TimerEvent.h"
 
 
 using namespace std;
@@ -94,7 +95,7 @@ class BigBoss
 public:
     explicit BigBoss(const std::string &filename);
 
-    void run() { m_loop.run(); }
+    void run();
 
 private:
     void readQueryTask(const string &filename);
@@ -105,12 +106,18 @@ private:
     void eventCb(Net::EVENT_KIND kind, const std::string &msg, void *arg);
     void hostConnectEventCb(Net::EVENT_KIND kind, const std::string &msg, void *arg);
 
+    void timeoutCb(void *);
+
+    void stopCheck();
 
 private:
     Net::EventLoop m_loop;
+    Net::TimerEvent m_timer_ev;
 
     std::map<TcpClientUPtr, DnsQueryTask> m_dns_query_task;
     std::map<TcpClientUPtr, HostConnectTask> m_host_connect_task;
+
+    bool m_has_dns_rsp = false;
 };
 
 
@@ -121,10 +128,29 @@ BigBoss::BigBoss(const string &filename)
 }
 
 
+void BigBoss::run()
+{
+    m_loop.run();
+
+    if(!m_has_dns_rsp)
+        std::cout<<"cannot get any dns response"<<std::endl;
+}
+
 void BigBoss::addTimeoutEvent()
 {
-
+    Net::TimerCbParam cb_param;
+    cb_param.arg = this;
+    cb_param.cb  = std::bind(&BigBoss::timeoutCb, this, std::placeholders::_1);
+    m_timer_ev.init(m_loop, 20 * 1000, false, cb_param);
 }
+
+
+void BigBoss::stopCheck()
+{
+    if(m_dns_query_task.empty() && m_host_connect_task.empty())
+        m_timer_ev.cancal();
+}
+
 
 void BigBoss::hostConnectEventCb(Net::EVENT_KIND kind, const std::string &msg, void *arg)
 {
@@ -137,10 +163,12 @@ void BigBoss::hostConnectEventCb(Net::EVENT_KIND kind, const std::string &msg, v
 
     if(kind == Net::EK_CONNECT )
     {
-        std::cout<<"success connect "<<it->second.connectHost()<<"\t"<<it->second.connectIp()<<":"<<it->second.connectPort()<<std::endl;
+        std::cout<<"###### success connect "<<it->second.connectHost()<<"\t"<<it->second.connectIp()<<":"<<it->second.connectPort()<<std::endl;
     }
 
     m_host_connect_task.erase(it);
+
+    stopCheck();
 }
 
 
@@ -184,6 +212,7 @@ void BigBoss::readCb(const std::vector<uchar> &data, void *arg)
         return ;
     else if(ret == 1)//success decode
     {
+        m_has_dns_rsp = true;
         auto ips = dns_task.queryHostIp();
         std::cout<<dns_task.queryHost()<<" has ";
         std::copy(ips.begin(), ips.end(), std::ostream_iterator<std::string>(std::cout, " "));
@@ -204,6 +233,7 @@ void BigBoss::readCb(const std::vector<uchar> &data, void *arg)
     }
 
     m_dns_query_task.erase(it);
+    stopCheck();
 }
 
 
@@ -228,13 +258,24 @@ void BigBoss::eventCb(Net::EVENT_KIND kind, const std::string &msg, void *arg)
         auto query_packet = Net::getDnsPacketByHost(it->second.queryHost());
         it->first->writeData(query_packet);
     }
+
+    stopCheck();
+}
+
+
+void BigBoss::timeoutCb(void *)
+{
+    std::cout<<"******* timeout **********"<<std::endl;
+    m_dns_query_task.clear();
+    m_host_connect_task.clear();
 }
 
 
 
-int main()
+int main(int argc, char **argv)
 {
-    BigBoss boss("dns_query.txt");
+    std::string config_file = argc > 1 ? argv[1] : "dns_query.txt";
+    BigBoss boss(config_file);
     boss.run();
 
     std::cout<<"hello world"<<std::endl;

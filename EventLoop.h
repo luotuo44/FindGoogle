@@ -9,6 +9,7 @@
 #include<memory>
 
 struct event_base;
+struct event;
 struct bufferevent;
 
 
@@ -31,12 +32,9 @@ public:
 
 public:
     bufferevent* newBufferevent();
+    event* newEvent();
 
     void run();
-
-private:
-    event_base* getEventBase() { return m_base; }
-
 
 private:
     event_base *m_base = nullptr;
